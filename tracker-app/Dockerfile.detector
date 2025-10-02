@@ -1,0 +1,51 @@
+# Hybrid Detector Docker image
+# Runs the detection service with CUDA support for OSNet and face recognition
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-dev \
+    libsqlite3-dev \
+    libgomp1 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /app
+
+# Install PyTorch with CUDA support
+RUN pip3 install --no-cache-dir \
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install Python dependencies for detection
+RUN pip3 install --no-cache-dir \
+    numpy \
+    scipy \
+    opencv-python-headless \
+    pillow \
+    requests \
+    torchreid \
+    numba \
+    cupy-cuda12x
+
+# Copy application code
+COPY . /app
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV CUDA_VISIBLE_DEVICES=0
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+
+# Suppress warnings
+ENV PYTHONWARNINGS="ignore::UserWarning"
+
+# Health check - verify detector is running
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+    CMD python3 -c "import os; assert os.path.exists('matches.db')" || exit 1
+
+# Run detector service
+CMD ["python3", "detector_service.py"]

@@ -1,0 +1,59 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Databases (will be mounted as volumes)
+*.db
+*.db-shm
+*.db-wal
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile*
+docker-compose.yml
+.dockerignore
+
+# Logs
+*.log
+nohup.out
+
+# Documentation
+*.md
+docs/
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Temporary files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Large data files (will be mounted as volumes)
+ply_storage/
+npy_storage/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/

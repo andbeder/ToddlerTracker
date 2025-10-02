@@ -1,0 +1,198 @@
+version: '3.8'
+
+services:
+  # MQTT Message Broker
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    networks:
+      - toddler-tracker
+
+  # Frigate NVR for person detection
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: frigate
+    restart: unless-stopped
+    privileged: true
+    shm_size: "128mb"
+    devices:
+      - /dev/bus/usb:/dev/bus/usb  # For USB Coral
+      - /dev/dri/renderD128:/dev/dri/renderD128  # For Intel GPU hardware acceleration
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ./frigate/config/config.yaml:/config/config.yml
+      - ./frigate/media:/media/frigate
+      - ./frigate/db:/db
+      - type: tmpfs
+        target: /tmp/cache
+        tmpfs:
+          size: 1000000000
+    ports:
+      - "5000:5000"
+      - "8554:8554"  # RTSP feeds
+      - "8555:8555/tcp"  # WebRTC over tcp
+      - "8555:8555/udp"  # WebRTC over udp
+    environment:
+      - FRIGATE_RTSP_PASSWORD=password
+    depends_on:
+      - mosquitto
+    networks:
+      - toddler-tracker
+
+  # CompreFace Postgres Database
+  compreface-postgres-db:
+    image: ${registry}compreface-postgres-db:${POSTGRES_VERSION}
+    container_name: compreface-postgres-db
+    restart: unless-stopped
+    volumes:
+      - ./compreface/postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_USER=${postgres_username}
+      - POSTGRES_PASSWORD=${postgres_password}
+      - POSTGRES_DB=${postgres_db}
+    networks:
+      - toddler-tracker
+
+  # CompreFace Core (ML Engine)
+  compreface-core:
+    image: ${registry}compreface-core:${CORE_VERSION}
+    container_name: compreface-core
+    restart: unless-stopped
+    depends_on:
+      - compreface-postgres-db
+    environment:
+      - ML_PORT=3000
+      - IMG_LENGTH_LIMIT=10000
+      - UWSGI_PROCESSES=${uwsgi_processes}
+      - UWSGI_THREADS=${uwsgi_threads}
+    # GPU support disabled - uncomment if NVIDIA Docker runtime is available
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    networks:
+      - toddler-tracker
+
+  # CompreFace API
+  compreface-api:
+    image: ${registry}compreface-api:${API_VERSION}
+    container_name: compreface-api
+    restart: unless-stopped
+    depends_on:
+      - compreface-postgres-db
+      - compreface-core
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://compreface-postgres-db:5432/${postgres_db}
+      - POSTGRES_USER=${postgres_username}
+      - POSTGRES_PASSWORD=${postgres_password}
+      - SAVE_IMAGES_TO_DB=${save_images_to_db}
+      - MAX_FILE_SIZE=${max_file_size}
+      - MAX_REQUEST_SIZE=${max_request_size}
+      - CONNECTION_TIMEOUT=${connection_timeout}
+      - READ_TIMEOUT=${read_timeout}
+      - CORE_CONNECTION_TIMEOUT=${connection_timeout}
+      - CORE_READ_TIMEOUT=${read_timeout}
+      - EMAIL_HOST=${email_host}
+      - EMAIL_USERNAME=${email_username}
+      - EMAIL_FROM=${email_from}
+      - EMAIL_PASSWORD=${email_password}
+      - ENABLE_EMAIL_SERVER=${enable_email_server}
+      - CORE_HOST=compreface-core
+      - CORE_PORT=3000
+      - JAVA_OPTIONS=${compreface_api_java_options}
+    networks:
+      - toddler-tracker
+
+  # CompreFace Admin
+  compreface-admin:
+    image: ${registry}compreface-admin:${ADMIN_VERSION}
+    container_name: compreface-admin
+    restart: unless-stopped
+    depends_on:
+      - compreface-postgres-db
+      - compreface-api
+    environment:
+      - POSTGRES_URL=jdbc:postgresql://compreface-postgres-db:5432/${postgres_db}
+      - POSTGRES_USER=${postgres_username}
+      - POSTGRES_PASSWORD=${postgres_password}
+      - ENABLE_EMAIL_SERVER=${enable_email_server}
+      - EMAIL_HOST=${email_host}
+      - EMAIL_USERNAME=${email_username}
+      - EMAIL_FROM=${email_from}
+      - EMAIL_PASSWORD=${email_password}
+      - ADMIN_JAVA_OPTIONS=${compreface_admin_java_options}
+    networks:
+      - toddler-tracker
+
+  # CompreFace UI
+  compreface-ui:
+    image: ${registry}compreface-fe:${FE_VERSION}
+    container_name: compreface-ui
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    depends_on:
+      - compreface-api
+      - compreface-admin
+    environment:
+      - CLIENT_MAX_BODY_SIZE=${max_request_size}
+      - PROXY_READ_TIMEOUT=${read_timeout}ms
+      - PROXY_CONNECT_TIMEOUT=${connection_timeout}ms
+    networks:
+      - toddler-tracker
+
+
+  # Home Assistant
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    volumes:
+      - ./homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - TZ=America/New_York  # Adjust to your timezone
+    depends_on:
+      - mosquitto
+
+  # NGINX Reverse Proxy (optional)
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - frigate
+      - double-take
+      - compreface-ui
+    networks:
+      - toddler-tracker
+
+networks:
+  toddler-tracker:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  frigate-media:
+  homeassistant-config:

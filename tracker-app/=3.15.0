@@ -1,0 +1,16 @@
+Defaulting to user installation because normal site-packages is not writeable
+Collecting numba
+  Downloading numba-0.62.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.8 kB)
+Collecting trimesh
+  Downloading trimesh-4.8.3-py3-none-any.whl.metadata (18 kB)
+Collecting llvmlite<0.46,>=0.45.0dev0 (from numba)
+  Downloading llvmlite-0.45.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (4.9 kB)
+Requirement already satisfied: numpy<2.4,>=1.22 in /home/andrew/.local/lib/python3.12/site-packages (from numba) (2.2.6)
+Downloading numba-0.62.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (3.5 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.5/3.5 MB 9.2 MB/s eta 0:00:00
+Downloading trimesh-4.8.3-py3-none-any.whl (735 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 735.5/735.5 kB 26.6 MB/s eta 0:00:00
+Downloading llvmlite-0.45.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (56.3 MB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 56.3/56.3 MB 29.3 MB/s eta 0:00:00
+Installing collected packages: trimesh, llvmlite, numba
+Successfully installed llvmlite-0.45.0 numba-0.62.0 trimesh-4.8.3

@@ -1,0 +1,8 @@
+{
+  "enabled": true,
+  "scan_interval": 5,
+  "global_min_confidence": 50,
+  "max_matches_per_hour": 100,
+  "cameras_enabled": true,
+  "last_modified": "2025-09-28T09:39:50.165937"
+}

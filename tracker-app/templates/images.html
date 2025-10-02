@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+
+{% block title %}Face Recognition - Toddler Tracker{% endblock %}
+
+{% block extra_css %}
+<style>
+    .preview-image {
+        width: 80px;
+        height: 80px;
+        object-fit: cover;
+        border-radius: 4px;
+        border: 2px solid #dee2e6;
+    }
+    .preview-container {
+        position: relative;
+        display: inline-block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Face Recognition Configuration</h1>
+
+<!-- API Configuration Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-gear"></i> CompreFace API Configuration</h5>
+    </div>
+    <div class="card-body">
+        <form id="apiConfigForm">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="apiUrl" class="form-label">CompreFace API URL</label>
+                        <input type="url" class="form-control" id="apiUrl" name="api_url"
+                               value="{{ config.compreface_url or 'http://localhost:8000' }}"
+                               placeholder="http://localhost:8000">
+                        <small class="form-text text-muted">URL of your CompreFace instance</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="apiKey" class="form-label">API Key</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="apiKey" name="api_key"
+                                   value="{{ config.compreface_api_key or '' }}"
+                                   placeholder="Enter your CompreFace API key">
+                            <button class="btn btn-outline-secondary" type="button" onclick="toggleApiKey()">
+                                <i class="bi bi-eye" id="apiKeyToggle"></i>
+                            </button>
+                        </div>
+                        <small class="form-text text-muted">Recognition service API key from CompreFace</small>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-primary" onclick="saveApiConfig()">
+                    <i class="bi bi-save"></i> Save Configuration
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="testConnection()">
+                    <i class="bi bi-plug"></i> Test Connection
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Face Training Section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-person-plus"></i> Train Face Recognition</h5>
+    </div>
+    <div class="card-body">
+        <form id="uploadForm" enctype="multipart/form-data">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="subjectName" class="form-label">Person Name</label>
+                        <input type="text" class="form-control" id="subjectName" name="subject_name"
+                               placeholder="Enter person's name" required>
+                        <small class="form-text text-muted">Name to identify this person</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="imageFiles" class="form-label">Training Images</label>
+                        <input type="file" class="form-control" id="imageFiles" name="images"
+                               accept="image/*" multiple required onchange="previewImages(this, 'imagePreview')">
+                        <small class="form-text text-muted">Select one or more clear face photos</small>
+                    </div>
+                    <div id="imagePreview" class="d-flex flex-wrap gap-2"></div>
+                </div>
+            </div>
+            <button type="button" class="btn btn-success" onclick="uploadImages()">
+                <i class="bi bi-upload"></i> Upload and Train
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- Existing Subjects Section -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-people"></i> Trained Subjects</h5>
+        <button class="btn btn-sm btn-outline-primary" onclick="loadSubjects()">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+    <div class="card-body">
+        <div id="subjectsList">
+            <div class="text-center text-muted py-3">
+                <i class="bi bi-hourglass-split"></i> Loading subjects...
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Image Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Image Preview</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="previewImage" src="" alt="Preview" class="img-fluid">
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Load subjects on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSubjects();
+});
+
+function toggleApiKey() {
+    const input = document.getElementById('apiKey');
+    const icon = document.getElementById('apiKeyToggle');
+    if (input.type === 'password') {
+        input.type = 'text';
+        icon.className = 'bi bi-eye-slash';
+    } else {
+        input.type = 'password';
+        icon.className = 'bi bi-eye';
+    }
+}
+
+function saveApiConfig() {
+    const form = document.getElementById('apiConfigForm');
+    const formData = new FormData(form);
+
+    fetch('/save_compreface_config', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('API configuration saved successfully!', 'success');
+        } else {
+            showAlert('Error: ' + (data.error || 'Failed to save configuration'), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('Error saving configuration', 'danger');
+    });
+}
+
+function testConnection() {
+    const apiUrl = document.getElementById('apiUrl').value;
+    const apiKey = document.getElementById('apiKey').value;
+
+    if (!apiUrl || !apiKey) {
+        showAlert('Please enter both API URL and API Key', 'warning');
+        return;
+    }
+
+    fetch('/test_compreface_connection', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            api_url: apiUrl,
+            api_key: apiKey
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('Connection successful! Found ' + data.subject_count + ' trained subjects.', 'success');
+            loadSubjects();
+        } else {
+            showAlert('Connection failed: ' + (data.error || 'Unknown error'), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('Error testing connection', 'danger');
+    });
+}
+
+function uploadImages() {
+    const subjectName = document.getElementById('subjectName').value;
+    const imageFiles = document.getElementById('imageFiles').files;
+
+    if (!subjectName || imageFiles.length === 0) {
+        showAlert('Please enter a name and select at least one image', 'warning');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('subject_name', subjectName);
+
+    for (let i = 0; i < imageFiles.length; i++) {
+        formData.append('images', imageFiles[i]);
+    }
+
+    // Show loading state
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Uploading...';
+
+    fetch('/upload_training_images', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            let message = 'Successfully trained ' + data.images_processed + ' image(s) for ' + subjectName;
+            if (data.errors && data.errors.length > 0) {
+                message += '<br><small>Some images failed:<br>' + data.errors.join('<br>') + '</small>';
+                showAlert(message, 'warning');
+            } else {
+                showAlert(message, 'success');
+            }
+            document.getElementById('uploadForm').reset();
+            loadSubjects();
+        } else {
+            let errorMsg = 'Error: ' + (data.error || 'Failed to upload images');
+            if (data.details && data.details.length > 0) {
+                errorMsg += '<br><small>' + data.details.join('<br>') + '</small>';
+            }
+            showAlert(errorMsg, 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('Error uploading images', 'danger');
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    });
+}
+
+function loadSubjects() {
+    fetch('/get_subjects')
+    .then(response => response.json())
+    .then(data => {
+        const container = document.getElementById('subjectsList');
+
+        if (data.error) {
+            container.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> ${data.error}
+                </div>
+            `;
+            return;
+        }
+
+        if (data.subjects && data.subjects.length > 0) {
+            let html = '<div class="row">';
+            data.subjects.forEach(subject => {
+                html += `
+                    <div class="col-md-4 col-lg-3 mb-3">
+                        <div class="card">
+                            <div class="card-body text-center">
+                                <i class="bi bi-person-circle display-4 text-primary mb-2"></i>
+                                <h6 class="card-title">
+                                    <a href="/subject/${encodeURIComponent(subject)}" class="text-decoration-none">${subject}</a>
+                                </h6>
+                                <div class="btn-group" role="group">
+                                    <a href="/subject/${encodeURIComponent(subject)}" class="btn btn-sm btn-outline-primary">
+                                        <i class="bi bi-eye"></i> View
+                                    </a>
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteSubject('${subject}')">
+                                        <i class="bi bi-trash"></i> Remove
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            container.innerHTML = html;
+        } else {
+            container.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-person-x display-1"></i>
+                    <p class="mt-3">No trained subjects found</p>
+                    <p>Upload images above to start training face recognition</p>
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        document.getElementById('subjectsList').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-circle"></i> Error loading subjects
+            </div>
+        `;
+    });
+}
+
+function deleteSubject(subjectName) {
+    if (!confirm(`Are you sure you want to remove "${subjectName}" from face recognition?`)) {
+        return;
+    }
+
+    fetch('/delete_subject', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            subject_name: subjectName
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert(`Successfully removed ${subjectName}`, 'success');
+            loadSubjects();
+        } else {
+            showAlert('Error: ' + (data.error || 'Failed to delete subject'), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showAlert('Error deleting subject', 'danger');
+    });
+}
+
+function previewImages(input, previewId) {
+    const preview = document.getElementById(previewId);
+    preview.innerHTML = '';
+
+    if (input.files && input.files.length > 0) {
+        Array.from(input.files).forEach((file, index) => {
+            if (file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const container = document.createElement('div');
+                    container.className = 'preview-container';
+
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.className = 'preview-image';
+                    img.title = file.name;
+
+                    container.appendChild(img);
+                    preview.appendChild(container);
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+    }
+}
+
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 70px; right: 20px; z-index: 1050; max-width: 400px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}

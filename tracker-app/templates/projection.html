@@ -1,0 +1,517 @@
+{% extends "base.html" %}
+
+{% block title %}Camera Projection - Toddler Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-grid-3x3"></i> Camera-to-Map Projection</h2>
+        <p class="text-muted">Project camera pixels onto the yard map using pose information and point cloud data.</p>
+    </div>
+</div>
+
+<!-- Used Yard Map Display -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-map-fill"></i> Active Yard Map</h5>
+            </div>
+            <div class="card-body" id="yardMapSection">
+                <div class="text-center text-muted">
+                    <i class="bi bi-map" style="font-size: 2rem;"></i>
+                    <p>Loading map information...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Camera List with Projection -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-camera-video"></i> Cameras</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Camera</th>
+                                <th>Resolution</th>
+                                <th>Pose Status</th>
+                                <th>Projection Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="camerasTableBody">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">Loading cameras...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Projection Canvas -->
+<div class="row mb-4" id="projectionViewer" style="display: none;">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-eye"></i> Projection View: <span id="projectionCameraName"></span></h5>
+                <button class="btn btn-outline-secondary btn-sm" onclick="closeProjectionView()">
+                    <i class="bi bi-x"></i> Close
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Yard Map with Projection Shadow</h6>
+                        <canvas id="projectionCanvas" width="800" height="600" style="max-width: 100%; border: 1px solid #ddd;"></canvas>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Projection Info</h6>
+                        <div id="projectionInfo">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Processing...</span>
+                            </div>
+                            <p class="mt-2">Computing camera-to-map projection...</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <button class="btn btn-success" id="saveProjectionBtn" onclick="saveProjection()" disabled>
+                        <i class="bi bi-save"></i> Save Projection Mapping
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Processing Modal -->
+<div class="modal fade" id="processingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Processing...</span>
+                </div>
+                <h5 id="processingTitle">Processing Projection</h5>
+                <p class="text-muted mb-0" id="processingMessage">Please wait...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let usedMap = null;
+let cameras = {{ cameras|tojson }};
+let cameraPoses = {};
+let cameraProjections = {};  // Track which cameras have saved projections
+let currentProjection = null;
+let projectionCanvas = null;
+let projectionCtx = null;
+
+// Load map and cameras on page load
+window.addEventListener('DOMContentLoaded', async function() {
+    await loadUsedMap();
+    await loadCameraPoses();
+    await loadProjectionStatus();
+    displayCameras();
+    initProjectionCanvas();
+});
+
+// Initialize projection canvas
+function initProjectionCanvas() {
+    projectionCanvas = document.getElementById('projectionCanvas');
+    projectionCtx = projectionCanvas.getContext('2d');
+}
+
+// Load the currently used yard map
+async function loadUsedMap() {
+    try {
+        const response = await fetch('/get_used_yard_map');
+        const result = await response.json();
+
+        const section = document.getElementById('yardMapSection');
+
+        if (result.status === 'success') {
+            usedMap = result.map;
+            section.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>${usedMap.name}</h6>
+                        <table class="table table-sm">
+                            <tr>
+                                <td><strong>Center:</strong></td>
+                                <td>(${usedMap.center_x.toFixed(2)}, ${usedMap.center_z.toFixed(2)})</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Size:</strong></td>
+                                <td>${usedMap.width.toFixed(2)} × ${usedMap.height.toFixed(2)} m</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Resolution:</strong></td>
+                                <td>${usedMap.resolution_x} × ${usedMap.resolution_y} px</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Rotation:</strong></td>
+                                <td>${usedMap.rotation.toFixed(1)}°</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Projection Method:</strong></td>
+                                <td>
+                                    <select id="projectionMethod" class="form-select form-select-sm">
+                                        <option value="cuda">CUDA (Fast - 240x speedup)</option>
+                                        <option value="cpu">CPU (Slow - Fallback)</option>
+                                    </select>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <img src="/yard_image/${usedMap.id}" class="img-fluid" alt="Yard Map" style="max-height: 300px;">
+                    </div>
+                </div>
+            `;
+        } else if (result.status === 'none') {
+            section.innerHTML = `
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> No yard map is currently set for projection.
+                    <br>Please go to the <a href="/yard" class="alert-link">Yard tab</a> and click "Use Map" on one of your saved maps.
+                </div>
+            `;
+        } else {
+            section.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Error loading map: ${result.message}
+                </div>
+            `;
+        }
+    } catch (error) {
+        document.getElementById('yardMapSection').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Error: ${error.message}
+            </div>
+        `;
+    }
+}
+
+// Load camera poses
+async function loadCameraPoses() {
+    try {
+        const response = await fetch('/get_poses');
+        const poses = await response.json();
+
+        // Convert array to object keyed by camera name
+        poses.forEach(pose => {
+            cameraPoses[pose.camera_name] = pose;
+        });
+    } catch (error) {
+        console.error('Error loading camera poses:', error);
+    }
+}
+
+// Load projection status for all cameras
+async function loadProjectionStatus() {
+    if (!usedMap) return;
+
+    try {
+        const response = await fetch(`/get_projection_status?map_id=${usedMap.id}`);
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            result.projections.forEach(proj => {
+                cameraProjections[proj.camera_name] = proj;
+            });
+        }
+    } catch (error) {
+        console.error('Error loading projection status:', error);
+    }
+}
+
+// Display cameras in table
+function displayCameras() {
+    const tbody = document.getElementById('camerasTableBody');
+
+    if (Object.keys(cameras).length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No cameras configured</td></tr>';
+        return;
+    }
+
+    let html = '';
+    for (const [cameraName, cameraConfig] of Object.entries(cameras)) {
+        const hasPose = cameraPoses[cameraName] !== undefined;
+        const poseStatus = hasPose
+            ? '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Available</span>'
+            : '<span class="badge bg-secondary"><i class="bi bi-x-circle"></i> No Pose</span>';
+
+        // Check if projection exists for this camera
+        const hasProjection = cameraProjections[cameraName] !== undefined;
+        const projectionStatus = hasProjection
+            ? '<span class="badge bg-success"><i class="bi bi-check-circle-fill"></i> Saved</span>'
+            : '<span class="badge bg-secondary">Not Saved</span>';
+
+        // Get resolution from camera config
+        const width = cameraConfig.detect?.width || 'Unknown';
+        const height = cameraConfig.detect?.height || 'Unknown';
+        const resolution = `${width} × ${height}`;
+
+        const projectBtn = hasPose && usedMap
+            ? `<button class="btn btn-primary btn-sm" onclick="projectCamera('${cameraName}')">
+                   <i class="bi bi-grid"></i> Project
+               </button>`
+            : `<button class="btn btn-secondary btn-sm" disabled>
+                   <i class="bi bi-grid"></i> Project
+               </button>`;
+
+        html += `
+            <tr>
+                <td><strong>${cameraName}</strong></td>
+                <td>${resolution}</td>
+                <td>${poseStatus}</td>
+                <td>${projectionStatus}</td>
+                <td>${projectBtn}</td>
+            </tr>
+        `;
+    }
+
+    tbody.innerHTML = html;
+}
+
+// Project camera onto map
+async function projectCamera(cameraName) {
+    if (!usedMap) {
+        alert('No yard map is set for projection');
+        return;
+    }
+
+    if (!cameraPoses[cameraName]) {
+        alert('Camera does not have pose information');
+        return;
+    }
+
+    // Show projection viewer
+    document.getElementById('projectionViewer').style.display = 'block';
+    document.getElementById('projectionCameraName').textContent = cameraName;
+    document.getElementById('saveProjectionBtn').disabled = true;
+
+    // Show processing modal
+    showProcessingModal('Computing Projection', 'Ray-tracing all 4.9M camera pixels to ground plane... This will take 60-90 seconds with CUDA.');
+
+    try {
+        // Get camera resolution
+        const cameraConfig = cameras[cameraName];
+        const width = cameraConfig.detect?.width || 1920;
+        const height = cameraConfig.detect?.height || 1080;
+
+        // Get projection method selection
+        const projectionMethod = document.getElementById('projectionMethod').value;
+
+        // Create abort controller with 2 minute timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minutes
+
+        // Call backend to compute projection
+        const response = await fetch('/project_camera_to_map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                camera_name: cameraName,
+                map_id: usedMap.id,
+                camera_width: width,
+                camera_height: height,
+                projection_method: projectionMethod
+            }),
+            signal: controller.signal
+        });
+
+        clearTimeout(timeoutId);
+
+        const result = await response.json();
+
+        hideProcessingModal();
+
+        if (result.status === 'success') {
+            currentProjection = result;
+            displayProjection(result);
+            document.getElementById('saveProjectionBtn').disabled = false;
+        } else {
+            alert('Error computing projection: ' + result.message);
+            document.getElementById('projectionViewer').style.display = 'none';
+        }
+
+    } catch (error) {
+        hideProcessingModal();
+        if (error.name === 'AbortError') {
+            alert('Projection timed out after 2 minutes. The computation may still be running on the server. Try refreshing the page or using a smaller sample rate.');
+        } else {
+            alert('Network error: ' + error.message + '\n\nThe projection may take 60-90 seconds. Please wait and do not refresh the page.');
+        }
+        document.getElementById('projectionViewer').style.display = 'none';
+    }
+}
+
+// Display projection results
+function displayProjection(result) {
+    // Debug: log projection data
+    console.log('Projection result:', result);
+    console.log('Projected pixels count:', result.projected_pixels ? result.projected_pixels.length : 0);
+    console.log('First 5 pixels:', result.projected_pixels ? result.projected_pixels.slice(0, 5) : []);
+    console.log('Bounds:', result.bounds);
+
+    // Load map image
+    const img = new Image();
+    img.onload = function() {
+        // Set canvas size to match map
+        projectionCanvas.width = img.width;
+        projectionCanvas.height = img.height;
+
+        console.log('Canvas size:', projectionCanvas.width, 'x', projectionCanvas.height);
+        console.log('Image size:', img.width, 'x', img.height);
+
+        // Draw map
+        projectionCtx.drawImage(img, 0, 0);
+
+        // Overlay projection shadow in blue - draw each unique map pixel once
+        console.log('Drawing', result.projected_pixels ? result.projected_pixels.length : 0, 'pixels');
+
+        if (result.projected_pixels && result.projected_pixels.length > 0) {
+            // Use a Set to track unique map pixels and only draw each once
+            const uniquePixels = new Set();
+            result.projected_pixels.forEach(pixel => {
+                const key = `${pixel[0]},${pixel[1]}`;
+                uniquePixels.add(key);
+            });
+
+            console.log('Unique map pixels:', uniquePixels.size);
+
+            // Draw each unique pixel as a single point
+            projectionCtx.fillStyle = 'rgba(0, 100, 255, 0.5)';
+            uniquePixels.forEach(key => {
+                const [x, y] = key.split(',').map(Number);
+                // Draw single pixel (1x1) for exact coverage
+                projectionCtx.fillRect(x, y, 1, 1);
+            });
+        } else {
+            console.log('No projected pixels to draw!');
+        }
+
+        projectionCtx.strokeStyle = 'rgba(0, 100, 255, 0.8)';
+        projectionCtx.lineWidth = 2;
+
+        // Draw bounding box of projection
+        if (result.bounds) {
+            projectionCtx.beginPath();
+            projectionCtx.rect(
+                result.bounds.min_x,
+                result.bounds.min_y,
+                result.bounds.max_x - result.bounds.min_x,
+                result.bounds.max_y - result.bounds.min_y
+            );
+            projectionCtx.stroke();
+        }
+    };
+    img.src = '/yard_image/' + usedMap.id;
+
+    // Display projection info
+    const infoDiv = document.getElementById('projectionInfo');
+    infoDiv.innerHTML = `
+        <div class="alert alert-success">
+            <i class="bi bi-check-circle"></i> Projection Complete
+        </div>
+        <table class="table table-sm">
+            <tr>
+                <td><strong>Mapped Pixels:</strong></td>
+                <td>${result.pixel_count || 0} pixels</td>
+            </tr>
+            <tr>
+                <td><strong>Coverage:</strong></td>
+                <td>${result.coverage_percent || 0}% of map</td>
+            </tr>
+            <tr>
+                <td><strong>Compute Time:</strong></td>
+                <td>${result.compute_time || 0}s</td>
+            </tr>
+        </table>
+        <p class="text-muted small">
+            <i class="bi bi-info-circle"></i> Blue overlay shows camera field of view projected onto ground plane.
+        </p>
+    `;
+}
+
+// Save projection mapping
+async function saveProjection() {
+    if (!currentProjection) {
+        return;
+    }
+
+    showProcessingModal('Saving Projection', 'Storing pixel mappings to database...');
+
+    try {
+        // Only send projection_id, not the full data (which could be 118MB!)
+        const response = await fetch('/save_projection', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                projection_id: currentProjection.projection_id
+            })
+        });
+
+        const result = await response.json();
+
+        hideProcessingModal();
+
+        if (result.status === 'success') {
+            // Mark this camera as having a saved projection
+            if (currentProjection && currentProjection.camera_name) {
+                cameraProjections[currentProjection.camera_name] = {
+                    camera_name: currentProjection.camera_name,
+                    saved: true
+                };
+            }
+
+            alert('Projection saved successfully!');
+            closeProjectionView();
+            displayCameras(); // Refresh camera list to show updated status
+        } else {
+            alert('Error saving projection: ' + result.message);
+        }
+
+    } catch (error) {
+        hideProcessingModal();
+        alert('Error: ' + error.message);
+    }
+}
+
+// Close projection view
+function closeProjectionView() {
+    document.getElementById('projectionViewer').style.display = 'none';
+    currentProjection = null;
+}
+
+// Processing modal functions
+function showProcessingModal(title, message) {
+    document.getElementById('processingTitle').textContent = title;
+    document.getElementById('processingMessage').textContent = message;
+    const modal = new bootstrap.Modal(document.getElementById('processingModal'));
+    modal.show();
+}
+
+function hideProcessingModal() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('processingModal'));
+    if (modal) {
+        modal.hide();
+    }
+}
+</script>
+{% endblock %}

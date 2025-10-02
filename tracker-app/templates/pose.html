@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+
+{% block title %}Camera Pose Extraction - Toddler Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-compass"></i> Camera Pose Extraction</h2>
+        <p class="text-muted">Extract camera poses from COLMAP reconstruction for accurate 3D tracking.</p>
+    </div>
+</div>
+
+<!-- Step 1: Camera Snapshots -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-camera"></i> Step 1: Download Camera Snapshots</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">Download high-quality snapshots from your cameras to use for COLMAP reconstruction.</p>
+
+                <div class="row" id="cameraGrid">
+                    {% for camera_name, camera_config in cameras.items() %}
+                    <div class="col-md-4 col-lg-3 mb-3">
+                        <div class="card h-100">
+                            <div class="card-header p-2">
+                                <h6 class="mb-0">{{ camera_name }}</h6>
+                            </div>
+                            <div class="card-body p-2 text-center">
+                                <div class="camera-thumbnail mb-2" style="height: 120px; background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; display: flex; align-items: center; justify-content: center;">
+                                    <img src="{{ url_for('camera_thumbnail', camera_name=camera_name) }}"
+                                         alt="{{ camera_name }}"
+                                         style="max-width: 100%; max-height: 100%; object-fit: contain;"
+                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                    <div style="display: none; color: #6c757d;">
+                                        <i class="bi bi-camera" style="font-size: 2rem;"></i><br>
+                                        <small>{{ camera_name }}</small>
+                                    </div>
+                                </div>
+                                <button class="btn btn-primary btn-sm" onclick="downloadSnapshot('{{ camera_name }}')">
+                                    <i class="bi bi-download"></i> Download
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                {% if not cameras %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> No cameras configured. Please add cameras first.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 2: COLMAP Upload -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-upload"></i> Step 2: Upload COLMAP Files</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">After running COLMAP reconstruction, upload the cameras.bin and images.bin files.</p>
+
+                <form id="colmapUploadForm" enctype="multipart/form-data">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="camerasFile" class="form-label">cameras.bin</label>
+                            <input type="file" class="form-control" id="camerasFile" name="cameras_file" accept=".bin" required>
+                            <div class="form-text">Contains camera intrinsic parameters</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="imagesFile" class="form-label">images.bin</label>
+                            <input type="file" class="form-control" id="imagesFile" name="images_file" accept=".bin" required>
+                            <div class="form-text">Contains camera poses and extrinsic parameters</div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <button type="submit" class="btn btn-success" id="uploadBtn">
+                            <i class="bi bi-upload"></i> Upload & Extract Poses
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="clearResults()" style="display: none;" id="clearBtn">
+                            <i class="bi bi-x-circle"></i> Clear Results
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 3: Extraction Results -->
+<div class="row mb-4" id="resultsSection" style="display: none;">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Step 3: Extracted Camera Poses</h5>
+                <button class="btn btn-primary btn-sm" onclick="savePoses()" id="savePosesBtn" style="display: none;">
+                    <i class="bi bi-save"></i> Save Poses
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="extractionResults"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 4: Saved Poses -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-database"></i> Saved Camera Poses</h5>
+                <button class="btn btn-outline-secondary btn-sm" onclick="loadSavedPoses()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="savedPoses">
+                    <div class="text-center text-muted">
+                        <i class="bi bi-database" style="font-size: 2rem;"></i>
+                        <p>Loading saved poses...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h5>Processing COLMAP Files</h5>
+                <p class="text-muted mb-0">Extracting camera poses...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let extractedPoses = null;
+
+// Download camera snapshot
+function downloadSnapshot(cameraName) {
+    const link = document.createElement('a');
+    link.href = `/download_snapshot/${cameraName}`;
+    link.download = `${cameraName}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Handle COLMAP file upload
+document.getElementById('colmapUploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData();
+    const camerasFile = document.getElementById('camerasFile').files[0];
+    const imagesFile = document.getElementById('imagesFile').files[0];
+
+    if (!camerasFile || !imagesFile) {
+        showAlert('Please select both cameras.bin and images.bin files', 'warning');
+        return;
+    }
+
+    formData.append('cameras_file', camerasFile);
+    formData.append('images_file', imagesFile);
+
+    // Show loading modal
+    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    loadingModal.show();
+
+    try {
+        const response = await fetch('/upload_colmap', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+        loadingModal.hide();
+
+        if (result.status === 'success') {
+            extractedPoses = result.poses;
+            displayExtractionResults(result);
+            showAlert(result.message, 'success');
+        } else {
+            showAlert(result.message, 'danger');
+        }
+
+    } catch (error) {
+        loadingModal.hide();
+        showAlert('Error uploading files: ' + error.message, 'danger');
+    }
+});
+
+// Display extraction results
+function displayExtractionResults(result) {
+    const resultsSection = document.getElementById('resultsSection');
+    const resultsDiv = document.getElementById('extractionResults');
+    const savePosesBtn = document.getElementById('savePosesBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    let html = '';
+
+    if (result.matches && Object.keys(result.matches).length > 0) {
+        html += `
+        <div class="alert alert-info mb-3">
+            <h6><i class="bi bi-info-circle"></i> Image to Camera Matching</h6>
+            <ul class="mb-0">
+        `;
+
+        for (const [imageName, cameraName] of Object.entries(result.matches)) {
+            html += `<li><code>${imageName}</code> → <strong>${cameraName}</strong></li>`;
+        }
+
+        html += '</ul></div>';
+    }
+
+    if (result.poses && Object.keys(result.poses).length > 0) {
+        html += `
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Camera</th>
+                        <th>Resolution</th>
+                        <th>Focal Length</th>
+                        <th>Field of View</th>
+                        <th>Source Image</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        for (const [cameraName, poseData] of Object.entries(result.poses)) {
+            const intrinsics = poseData.intrinsics;
+            const fovX = intrinsics.fov_x ? intrinsics.fov_x.toFixed(1) + '°' : 'N/A';
+            const fovY = intrinsics.fov_y ? intrinsics.fov_y.toFixed(1) + '°' : 'N/A';
+            const fx = intrinsics.fx ? intrinsics.fx.toFixed(1) : 'N/A';
+            const fy = intrinsics.fy ? intrinsics.fy.toFixed(1) : 'N/A';
+
+            html += `
+            <tr>
+                <td><strong>${cameraName}</strong></td>
+                <td>${intrinsics.width} × ${intrinsics.height}</td>
+                <td>fx: ${fx}<br>fy: ${fy}</td>
+                <td>H: ${fovX}<br>V: ${fovY}</td>
+                <td><code>${poseData.source_image}</code></td>
+            </tr>
+            `;
+        }
+
+        html += '</tbody></table></div>';
+
+        savePosesBtn.style.display = 'inline-block';
+    } else {
+        html += '<div class="alert alert-warning">No camera poses could be extracted from the COLMAP files.</div>';
+    }
+
+    resultsDiv.innerHTML = html;
+    resultsSection.style.display = 'block';
+    clearBtn.style.display = 'inline-block';
+}
+
+// Save extracted poses
+async function savePoses() {
+    if (!extractedPoses) {
+        showAlert('No poses to save', 'warning');
+        return;
+    }
+
+    try {
+        const response = await fetch('/save_poses', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ poses: extractedPoses })
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success' || result.status === 'partial') {
+            showAlert(result.message, result.status === 'success' ? 'success' : 'warning');
+            loadSavedPoses(); // Refresh saved poses display
+        } else {
+            showAlert(result.message, 'danger');
+        }
+
+    } catch (error) {
+        showAlert('Error saving poses: ' + error.message, 'danger');
+    }
+}
+
+// Load and display saved poses
+async function loadSavedPoses() {
+    const savedPosesDiv = document.getElementById('savedPoses');
+
+    try {
+        const response = await fetch('/get_poses');
+        const poses = await response.json();
+
+        if (poses.length === 0) {
+            savedPosesDiv.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="bi bi-database" style="font-size: 2rem;"></i>
+                    <p>No saved camera poses found</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Camera</th>
+                        <th>Resolution</th>
+                        <th>Focal Length</th>
+                        <th>Field of View</th>
+                        <th>Updated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        poses.forEach(pose => {
+            const intrinsics = pose.intrinsics;
+            const fovX = pose.fov_x ? pose.fov_x.toFixed(1) + '°' : 'N/A';
+            const fovY = pose.fov_y ? pose.fov_y.toFixed(1) + '°' : 'N/A';
+            const fx = intrinsics.fx ? intrinsics.fx.toFixed(1) : 'N/A';
+            const fy = intrinsics.fy ? intrinsics.fy.toFixed(1) : 'N/A';
+            const updated = new Date(pose.updated_at).toLocaleString();
+
+            html += `
+            <tr>
+                <td><strong>${pose.camera_name}</strong></td>
+                <td>${pose.image_width} × ${pose.image_height}</td>
+                <td>fx: ${fx}<br>fy: ${fy}</td>
+                <td>H: ${fovX}<br>V: ${fovY}</td>
+                <td><small>${updated}</small></td>
+                <td>
+                    <button class="btn btn-outline-danger btn-sm" onclick="deletePose('${pose.camera_name}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            `;
+        });
+
+        html += '</tbody></table></div>';
+        savedPosesDiv.innerHTML = html;
+
+    } catch (error) {
+        savedPosesDiv.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Error loading saved poses: ${error.message}
+            </div>
+        `;
+    }
+}
+
+// Delete a saved pose
+async function deletePose(cameraName) {
+    if (!confirm(`Delete pose for camera "${cameraName}"?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/delete_pose/${cameraName}`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            showAlert(result.message, 'success');
+            loadSavedPoses(); // Refresh display
+        } else {
+            showAlert(result.message, 'danger');
+        }
+
+    } catch (error) {
+        showAlert('Error deleting pose: ' + error.message, 'danger');
+    }
+}
+
+// Clear extraction results
+function clearResults() {
+    document.getElementById('resultsSection').style.display = 'none';
+    document.getElementById('colmapUploadForm').reset();
+    document.getElementById('clearBtn').style.display = 'none';
+    extractedPoses = null;
+}
+
+// Show alert message
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+
+    // Auto-dismiss success alerts after 5 seconds
+    if (type === 'success') {
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.remove();
+            }
+        }, 5000);
+    }
+}
+
+// Load saved poses on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSavedPoses();
+});
+</script>
+{% endblock %}

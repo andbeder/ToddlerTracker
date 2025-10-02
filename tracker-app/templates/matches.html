@@ -1,0 +1,891 @@
+{% extends "base.html" %}
+
+{% block title %}Face Recognition Matches - Toddler Tracker{% endblock %}
+
+{% block extra_css %}
+<style>
+    .match-card {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 15px;
+        transition: box-shadow 0.3s ease;
+    }
+    .match-card:hover {
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    }
+    .match-image {
+        width: 100px;
+        height: 100px;
+        object-fit: cover;
+    }
+    .match-score {
+        font-size: 1.1em;
+        font-weight: bold;
+    }
+    .match-score.high-confidence {
+        color: #28a745;
+    }
+    .match-score.medium-confidence {
+        color: #ffc107;
+    }
+    .match-score.low-confidence {
+        color: #dc3545;
+    }
+    .threshold-slider {
+        width: 100%;
+    }
+    .threshold-display {
+        font-weight: bold;
+        color: #007bff;
+    }
+    .match-timestamp {
+        font-size: 0.9em;
+        color: #6c757d;
+    }
+    .no-matches {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6c757d;
+    }
+    .subject-threshold-card {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 6px;
+        padding: 15px;
+        margin-bottom: 15px;
+    }
+    .health-indicators {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 20px;
+        align-items: center;
+    }
+    .health-indicator {
+        display: flex;
+        align-items: center;
+        flex: 0 0 auto;
+    }
+    .health-lamp {
+        width: 40px !important;
+        height: 40px !important;
+        border-radius: 50%;
+        margin-right: 15px;
+        border: 3px solid #000;
+        box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        flex-shrink: 0;
+        display: inline-block !important;
+    }
+    .health-lamp.healthy {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        box-shadow: 0 0 8px rgba(40, 167, 69, 0.6);
+    }
+    .health-lamp.unhealthy {
+        background: linear-gradient(135deg, #dc3545, #e74c3c);
+        box-shadow: 0 0 8px rgba(220, 53, 69, 0.6);
+    }
+    .health-lamp.disabled {
+        background: linear-gradient(135deg, #6c757d, #adb5bd);
+        box-shadow: 0 0 8px rgba(108, 117, 125, 0.4);
+    }
+    .health-lamp.loading {
+        background: #ffc107 !important;
+        box-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+        animation: pulse 2s infinite;
+    }
+    /* Fallback for better visibility */
+    .health-lamp {
+        display: inline-block !important;
+        min-width: 40px;
+        min-height: 40px;
+        background: #ff0000 !important; /* Bright red for testing */
+        border: 3px solid #000000 !important;
+        border-radius: 50% !important;
+    }
+    /* Override all lamp states with simple colors */
+    .health-lamp.healthy {
+        background: #00ff00 !important; /* Bright green */
+    }
+    .health-lamp.unhealthy {
+        background: #ff0000 !important; /* Bright red */
+    }
+    .health-lamp.disabled {
+        background: #808080 !important; /* Gray */
+    }
+    .health-lamp.loading {
+        background: #ffff00 !important; /* Bright yellow */
+    }
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+    }
+    .health-label {
+        font-size: 0.9em;
+        font-weight: 500;
+    }
+    .health-status {
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Face Recognition Matches</h1>
+
+<!-- System Health Status -->
+<div class="health-status">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="mb-0"><i class="bi bi-heart-pulse"></i> System Health</h6>
+        <small class="text-muted" id="health-last-updated">Loading...</small>
+    </div>
+    <div class="health-indicators" style="display: flex !important; flex-wrap: wrap !important; gap: 20px !important; align-items: center !important;">
+        <div class="health-indicator" style="display: flex !important; align-items: center !important;">
+            <div id="frigate-lamp" title="Loading..." style="display: inline-block; width: 20px; height: 20px; background: #ffc107; border: 2px solid #fff; border-radius: 50%; margin-right: 12px; box-shadow: 0 0 6px rgba(0,0,0,0.3);"></div>
+            <span class="health-label">Frigate</span>
+        </div>
+        <div class="health-indicator" style="display: flex !important; align-items: center !important;">
+            <div id="compreface-lamp" title="Loading..." style="display: inline-block; width: 20px; height: 20px; background: #ffc107; border: 2px solid #fff; border-radius: 50%; margin-right: 12px; box-shadow: 0 0 6px rgba(0,0,0,0.3);"></div>
+            <span class="health-label">CompreFace</span>
+        </div>
+        <div class="health-indicator" style="display: flex !important; align-items: center !important;">
+            <div id="mqtt-lamp" title="Loading..." style="display: inline-block; width: 20px; height: 20px; background: #ffc107; border: 2px solid #fff; border-radius: 50%; margin-right: 12px; box-shadow: 0 0 6px rgba(0,0,0,0.3);"></div>
+            <span class="health-label">MQTT</span>
+        </div>
+        <div class="health-indicator" style="display: flex !important; align-items: center !important;">
+            <div id="homeassistant-lamp" title="Loading..." style="display: inline-block; width: 20px; height: 20px; background: #ffc107; border: 2px solid #fff; border-radius: 50%; margin-right: 12px; box-shadow: 0 0 6px rgba(0,0,0,0.3);"></div>
+            <span class="health-label">Home Assistant</span>
+        </div>
+        <div class="health-indicator" style="display: flex !important; align-items: center !important;">
+            <div id="live-detection-lamp" title="Loading..." style="display: inline-block; width: 20px; height: 20px; background: #ffc107; border: 2px solid #fff; border-radius: 50%; margin-right: 12px; box-shadow: 0 0 6px rgba(0,0,0,0.3);"></div>
+            <span class="health-label">Live Detection</span>
+        </div>
+    </div>
+</div>
+
+<!-- Controls Section -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-sliders"></i> Match Filters</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="subjectFilter" class="form-label">Filter by Subject</label>
+                    <select class="form-select" id="subjectFilter" onchange="filterMatches()">
+                        <option value="">All Subjects</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label for="confidenceFilter" class="form-label">Minimum Confidence</label>
+                    <input type="range" class="form-range" id="confidenceFilter" min="0" max="100" value="50" onchange="updateConfidenceDisplay(); filterMatches()">
+                    <div class="d-flex justify-content-between">
+                        <small>0%</small>
+                        <small id="confidenceDisplay" class="threshold-display">50%</small>
+                        <small>100%</small>
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-primary" onclick="loadMatches()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="clearMatches()">
+                        <i class="bi bi-trash"></i> Clear All
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-gear"></i> Subject Thresholds</h5>
+            </div>
+            <div class="card-body">
+                <div id="subjectThresholds">
+                    <div class="text-muted text-center py-3">
+                        <i class="bi bi-person-plus"></i>
+                        <p class="mb-0">No subjects configured yet</p>
+                        <small>Add subjects in the Face Recognition tab first</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Live Match Detection Settings -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-play-circle"></i> Live Detection Settings</h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <div>
+                        <h6 class="mb-1">Server-Side Detection</h6>
+                        <small class="text-muted">Runs independently of browser</small>
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="liveDetection" onchange="toggleLiveDetection()">
+                        <label class="form-check-label" for="liveDetection">
+                            <span id="liveStatus">Loading...</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="scanInterval" class="form-label">Scan Interval</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="scanInterval" min="1" max="300" value="10" onchange="updateDetectionSettings()">
+                        <span class="input-group-text">seconds</span>
+                    </div>
+                    <div class="form-text">How often to scan cameras (1-300 seconds)</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="globalMinConfidence" class="form-label">Global Min Confidence</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" id="globalMinConfidence" min="0" max="100" value="50" onchange="updateDetectionSettings()">
+                        <span class="input-group-text">%</span>
+                    </div>
+                    <div class="form-text">Minimum confidence before checking subject thresholds</div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card bg-light">
+                    <div class="card-body">
+                        <h6 class="card-title">Detection Status</h6>
+                        <div id="detectionStatus">
+                            <div class="text-center">
+                                <div class="spinner-border spinner-border-sm" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <small class="d-block mt-2">Loading status...</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Matches Display -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="bi bi-search"></i> Recent Matches</h5>
+        <div class="d-flex align-items-center gap-2">
+            <span id="matchCount" class="badge bg-primary">0 matches</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="clearMatches()" title="Clear all matches">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div id="matchesContainer">
+            <div class="no-matches">
+                <i class="bi bi-search display-1"></i>
+                <h4 class="mt-3">No matches found</h4>
+                <p>Face recognition matches will appear here when detected</p>
+                <button class="btn btn-outline-primary" onclick="simulateMatch()">
+                    <i class="bi bi-play"></i> Test with Simulated Match
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let allMatches = [];
+let subjects = [];
+let subjectThresholds = {};
+let detectionSettings = {};
+let statusUpdateInterval = null;
+let statusPollingInterval = null;
+let healthCheckInterval = null;
+
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 70px; right: 20px; z-index: 1050; max-width: 400px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(alertDiv);
+
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+
+function updateConfidenceDisplay() {
+    const slider = document.getElementById('confidenceFilter');
+    const display = document.getElementById('confidenceDisplay');
+    display.textContent = slider.value + '%';
+}
+
+function loadSubjects() {
+    fetch('/get_subjects')
+        .then(response => response.json())
+        .then(data => {
+            subjects = data.subjects || [];
+            updateSubjectFilter();
+            loadThresholds();
+        })
+        .catch(error => {
+            console.error('Error loading subjects:', error);
+        });
+}
+
+function loadThresholds() {
+    fetch('/get_thresholds')
+        .then(response => response.json())
+        .then(data => {
+            subjectThresholds = data.thresholds || {};
+            updateSubjectThresholds();
+        })
+        .catch(error => {
+            console.error('Error loading thresholds:', error);
+            // Initialize with defaults if loading fails
+            subjectThresholds = {};
+            subjects.forEach(subject => {
+                subjectThresholds[subject] = 75;
+            });
+            updateSubjectThresholds();
+        });
+}
+
+function updateSubjectFilter() {
+    const select = document.getElementById('subjectFilter');
+    select.innerHTML = '<option value="">All Subjects</option>';
+
+    subjects.forEach(subject => {
+        const option = document.createElement('option');
+        option.value = subject;
+        option.textContent = subject;
+        select.appendChild(option);
+    });
+}
+
+function updateSubjectThresholds() {
+    const container = document.getElementById('subjectThresholds');
+
+    if (subjects.length === 0) {
+        container.innerHTML = `
+            <div class="text-muted text-center py-3">
+                <i class="bi bi-person-plus"></i>
+                <p class="mb-0">No subjects configured yet</p>
+                <small>Add subjects in the Face Recognition tab first</small>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = '';
+
+    subjects.forEach(subject => {
+        const threshold = getSubjectThreshold(subject);
+        const card = document.createElement('div');
+        card.className = 'subject-threshold-card';
+        card.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <strong>${subject}</strong>
+                <span class="threshold-display" id="threshold-display-${subject}">${threshold}%</span>
+            </div>
+            <input type="range" class="threshold-slider" min="0" max="100" value="${threshold}"
+                   id="threshold-slider-${subject}"
+                   onchange="updateSubjectThreshold('${subject}', this.value)">
+            <div class="d-flex justify-content-between mt-1">
+                <small class="text-muted">Less Strict</small>
+                <small class="text-muted">More Strict</small>
+            </div>
+        `;
+        container.appendChild(card);
+    });
+}
+
+function getSubjectThreshold(subject) {
+    return subjectThresholds[subject] || 75;
+}
+
+function updateSubjectThreshold(subject, value) {
+    const numValue = parseFloat(value);
+
+    // Update local cache
+    subjectThresholds[subject] = numValue;
+
+    // Update display immediately
+    const display = document.getElementById(`threshold-display-${subject}`);
+    if (display) {
+        display.textContent = numValue + '%';
+    }
+
+    // Save to server
+    fetch('/set_threshold', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            subject: subject,
+            threshold: numValue
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            filterMatches();
+        } else {
+            showAlert('Error saving threshold: ' + (data.error || 'Unknown error'), 'danger');
+            // Revert on error
+            loadThresholds();
+        }
+    })
+    .catch(error => {
+        console.error('Error saving threshold:', error);
+        showAlert('Error saving threshold', 'danger');
+        // Revert on error
+        loadThresholds();
+    });
+}
+
+function loadMatches() {
+    fetch('/get_matches')
+        .then(response => response.json())
+        .then(data => {
+            allMatches = data.matches || [];
+            filterMatches();
+        })
+        .catch(error => {
+            console.error('Error loading matches:', error);
+            // For demo purposes, use simulated data if API fails
+            allMatches = [];
+            filterMatches();
+        });
+}
+
+function filterMatches() {
+    const subjectFilter = document.getElementById('subjectFilter').value;
+    const confidenceFilter = parseInt(document.getElementById('confidenceFilter').value);
+
+    let filteredMatches = allMatches.filter(match => {
+        if (subjectFilter && match.subject !== subjectFilter) return false;
+        if (match.confidence < confidenceFilter) return false;
+
+        // Check subject-specific threshold
+        const subjectThreshold = getSubjectThreshold(match.subject);
+        if (match.confidence < subjectThreshold) return false;
+
+        return true;
+    });
+
+    displayMatches(filteredMatches);
+}
+
+function displayMatches(matches) {
+    const container = document.getElementById('matchesContainer');
+    const countBadge = document.getElementById('matchCount');
+
+    countBadge.textContent = `${matches.length} matches`;
+
+    if (matches.length === 0) {
+        container.innerHTML = `
+            <div class="no-matches">
+                <i class="bi bi-search display-1"></i>
+                <h4 class="mt-3">No matches found</h4>
+                <p>Try adjusting your filters or check back later</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = '';
+
+    matches.forEach(match => {
+        const matchDiv = document.createElement('div');
+        matchDiv.className = 'match-card';
+
+        const confidenceClass = match.confidence >= 85 ? 'high-confidence' :
+                               match.confidence >= 70 ? 'medium-confidence' : 'low-confidence';
+
+        matchDiv.innerHTML = `
+            <div class="row g-0">
+                <div class="col-auto">
+                    <img src="/match_image/${match.id}"
+                         class="match-image" alt="Camera Snapshot"
+                         onerror="this.src='data:image/svg+xml,<svg width=\\'100\\' height=\\'100\\' xmlns=\\'http://www.w3.org/2000/svg\\'><rect width=\\'100\\' height=\\'100\\' fill=\\'%23f0f0f0\\'/><text x=\\'50\\' y=\\'50\\' text-anchor=\\'middle\\' font-size=\\'12\\' fill=\\'%23999\\'>No Image</text></svg>';">
+                </div>
+                <div class="col">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="card-title mb-1">${match.subject}</h6>
+                                <p class="card-text match-timestamp">
+                                    <i class="bi bi-clock"></i> ${new Date(match.timestamp).toLocaleString()}
+                                </p>
+                                <p class="card-text">
+                                    <small class="text-muted">Camera: ${match.camera || 'Unknown'}</small>
+                                </p>
+                            </div>
+                            <div class="text-end">
+                                <div class="match-score ${confidenceClass}">
+                                    ${match.confidence.toFixed(1)}%
+                                </div>
+                                <small class="text-muted">confidence</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        container.appendChild(matchDiv);
+    });
+}
+
+function clearMatches() {
+    if (!confirm('Are you sure you want to clear all matches?')) return;
+
+    fetch('/clear_matches', { method: 'POST' })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('All matches cleared', 'success');
+                loadMatches();
+            } else {
+                showAlert('Error clearing matches', 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error clearing matches:', error);
+            showAlert('Error clearing matches', 'danger');
+        });
+}
+
+function toggleLiveDetection() {
+    const checkbox = document.getElementById('liveDetection');
+    const status = document.getElementById('liveStatus');
+
+    // Toggle detection on server
+    fetch('/toggle_detection', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            enabled: checkbox.checked
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            if (data.enabled) {
+                status.textContent = 'Enabled';
+                status.className = 'text-success';
+                startPollingStatus();
+            } else {
+                status.textContent = 'Disabled';
+                status.className = '';
+                stopPollingStatus();
+            }
+        } else {
+            showAlert('Error toggling detection: ' + (data.error || 'Unknown error'), 'danger');
+            // Revert checkbox state on error
+            checkbox.checked = !checkbox.checked;
+        }
+    })
+    .catch(error => {
+        console.error('Error toggling detection:', error);
+        showAlert('Error toggling detection', 'danger');
+        // Revert checkbox state on error
+        checkbox.checked = !checkbox.checked;
+    });
+}
+
+function startPollingStatus() {
+    if (statusPollingInterval) return;
+
+    // Poll for new matches every 5 seconds when detection is enabled
+    statusPollingInterval = setInterval(() => {
+        loadMatches();
+    }, 5000);
+}
+
+function stopPollingStatus() {
+    if (statusPollingInterval) {
+        clearInterval(statusPollingInterval);
+        statusPollingInterval = null;
+    }
+}
+
+function loadDetectionSettings() {
+    fetch('/get_detection_settings')
+        .then(response => response.json())
+        .then(data => {
+            if (data.settings) {
+                detectionSettings = data.settings;
+
+                // Update UI elements
+                const checkbox = document.getElementById('liveDetection');
+                const status = document.getElementById('liveStatus');
+                const scanInterval = document.getElementById('scanInterval');
+                const globalMinConfidence = document.getElementById('globalMinConfidence');
+
+                checkbox.checked = detectionSettings.enabled || false;
+                scanInterval.value = detectionSettings.scan_interval || 10;
+                globalMinConfidence.value = detectionSettings.global_min_confidence || 50;
+
+                if (detectionSettings.enabled) {
+                    status.textContent = 'Enabled';
+                    status.className = 'text-success';
+                    startPollingStatus();
+                } else {
+                    status.textContent = 'Disabled';
+                    status.className = '';
+                    stopPollingStatus();
+                }
+
+                updateConfidenceDisplay();
+            } else {
+                showAlert('Error loading detection settings: ' + (data.error || 'Unknown error'), 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading detection settings:', error);
+            showAlert('Error loading detection settings', 'danger');
+        });
+}
+
+function updateDetectionSettings() {
+    const scanInterval = document.getElementById('scanInterval');
+    const globalMinConfidence = document.getElementById('globalMinConfidence');
+
+    const settings = {
+        scan_interval: parseInt(scanInterval.value),
+        global_min_confidence: parseInt(globalMinConfidence.value)
+    };
+
+    fetch('/update_detection_settings', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(settings)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            detectionSettings = { ...detectionSettings, ...settings };
+            showAlert('Detection settings updated successfully', 'success');
+        } else {
+            showAlert('Error updating settings: ' + (data.error || 'Unknown error'), 'danger');
+            // Revert on error
+            loadDetectionSettings();
+        }
+    })
+    .catch(error => {
+        console.error('Error updating detection settings:', error);
+        showAlert('Error updating detection settings', 'danger');
+        // Revert on error
+        loadDetectionSettings();
+    });
+}
+
+function loadHealthStatus() {
+    fetch('/health_check')
+        .then(response => response.json())
+        .then(data => {
+            if (data.components) {
+                updateHealthIndicators(data.components);
+                updateHealthTimestamp(data.timestamp);
+            } else {
+                console.error('Invalid health check response:', data);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading health status:', error);
+            // Set all indicators to unhealthy on error
+            const components = ['frigate', 'compreface', 'mqtt', 'homeassistant', 'live-detection'];
+            components.forEach(component => {
+                const lamp = document.getElementById(`${component}-lamp`);
+                if (lamp) {
+                    lamp.className = 'health-lamp unhealthy';
+                    lamp.title = 'Connection error';
+                }
+            });
+        });
+}
+
+function updateHealthIndicators(components) {
+    Object.keys(components).forEach(componentName => {
+        const component = components[componentName];
+        const lampId = componentName === 'live_detection' ? 'live-detection-lamp' : `${componentName}-lamp`;
+        const lamp = document.getElementById(lampId);
+
+        if (lamp) {
+            // Set background color based on status using inline styles
+            let backgroundColor = '#808080'; // Default gray
+
+            if (component.status === 'healthy') {
+                backgroundColor = '#28a745'; // Professional green
+            } else if (component.status === 'disabled') {
+                backgroundColor = '#6c757d'; // Professional gray
+            } else {
+                backgroundColor = '#dc3545'; // Professional red
+            }
+
+            // Update the inline style
+            lamp.style.backgroundColor = backgroundColor;
+
+            // Set tooltip with message
+            lamp.title = component.message || component.status;
+        }
+    });
+}
+
+function updateHealthTimestamp(timestamp) {
+    const element = document.getElementById('health-last-updated');
+    if (element && timestamp) {
+        const date = new Date(timestamp);
+        element.textContent = `Last updated: ${date.toLocaleTimeString()}`;
+    }
+}
+
+function loadDetectionStatus() {
+    fetch('/detection_status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status) {
+                updateDetectionStatusDisplay(data.status);
+            } else {
+                console.error('Invalid detection status response:', data);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading detection status:', error);
+            document.getElementById('detectionStatus').innerHTML = '<div class="text-danger">Error loading status</div>';
+        });
+}
+
+function updateDetectionStatusDisplay(status) {
+    const container = document.getElementById('detectionStatus');
+    const isEnabled = status.enabled;
+    const threadRunning = status.thread_running;
+    const recentMatches = status.recent_matches_last_hour || 0;
+    const scanInterval = status.scan_interval || 10;
+
+    let statusClass = 'text-success';
+    let statusText = 'Active';
+    let statusIcon = '🟢';
+
+    if (!isEnabled) {
+        statusClass = 'text-secondary';
+        statusText = 'Disabled';
+        statusIcon = '⚫';
+    } else if (!threadRunning) {
+        statusClass = 'text-danger';
+        statusText = 'Error';
+        statusIcon = '🔴';
+    }
+
+    container.innerHTML = `
+        <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="${statusClass}">
+                <strong>${statusIcon} ${statusText}</strong>
+            </div>
+            <small class="text-muted">Every ${scanInterval}s</small>
+        </div>
+        <div class="row text-center">
+            <div class="col">
+                <div class="fw-bold">${recentMatches}</div>
+                <small class="text-muted">Matches/Hour</small>
+            </div>
+            <div class="col">
+                <div class="fw-bold">${status.global_min_confidence}%</div>
+                <small class="text-muted">Min Confidence</small>
+            </div>
+        </div>
+    `;
+}
+
+function startHealthChecking() {
+    // Load initial status
+    loadHealthStatus();
+    loadDetectionStatus();
+
+    // Set up periodic health checks every 30 seconds
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+    }
+
+    healthCheckInterval = setInterval(() => {
+        loadHealthStatus();
+        loadDetectionStatus();
+    }, 30000);
+}
+
+function stopHealthChecking() {
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+    }
+}
+
+function simulateMatch() {
+    if (subjects.length === 0) {
+        showAlert('Please add subjects in the Face Recognition tab first', 'warning');
+        return;
+    }
+
+    const randomSubject = subjects[Math.floor(Math.random() * subjects.length)];
+    const randomConfidence = Math.random() * 40 + 60; // 60-100%
+
+    const simulatedMatch = {
+        subject: randomSubject,
+        confidence: randomConfidence,
+        timestamp: new Date().toISOString(),
+        camera: 'garage_front',
+        face_id: 'simulated-' + Date.now()
+    };
+
+    fetch('/add_match', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(simulatedMatch)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert(`Simulated match: ${randomSubject} (${randomConfidence.toFixed(1)}%)`, 'info');
+            loadMatches();
+        }
+    })
+    .catch(error => {
+        console.error('Error adding simulated match:', error);
+    });
+}
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', function() {
+    updateConfidenceDisplay();
+    loadSubjects();
+    loadMatches();
+    loadDetectionSettings();
+    startHealthChecking();
+});
+</script>
+{% endblock %}

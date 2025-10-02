@@ -1,0 +1,77 @@
+backyard.jpg
+front_door.jpg
+garage.jpg
+side_yard.jpg
+
+# Docker runtime and data files
+compreface/postgres-data/
+frigate/media/
+homeassistant/*.db
+homeassistant/*.db-*
+homeassistant/*.log
+homeassistant/.storage/
+double-take/.storage/
+mosquitto/data/
+mosquitto/log/
+frigate/db/
+frigate/db/frigate.db
+homeassistant/home-assistant.log*
+
+# Nginx runtime
+nginx/conf.d/
+nginx/ssl/
+
+# Environment files with secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Application databases and config
+tracker-app/matches.db
+tracker-app/thresholds.json
+tracker-app/tracking.db
+tracker-app/poses.db
+tracker-app/yard.db
+tracker-app/test.db
+tracker-app/test_matches.db
+
+# PLY point cloud files (large binary data)
+tracker-app/*.ply
+tracker-app/ply_storage/
+tracker-app/npy_storage/
+
+# Ultra-fast NPY memory-mapped files
+tracker-app/*.npy
+
+# OSNet feature databases
+tracker-app/*_features.db
+
+# Test files
+tracker-app/test_*.ply
+tracker-app/test_upload.ply
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+*.log
+*.pid

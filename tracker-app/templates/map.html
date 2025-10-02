@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+
+{% block title %}Live Map - Toddler Tracker{% endblock %}
+
+{% block styles %}
+<style>
+    /* Mobile-first responsive design */
+    html, body {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+        width: 100%;
+        position: fixed;
+    }
+
+    /* Hide navbar and container padding for map page */
+    .navbar {
+        display: none;
+    }
+
+    .container.mt-4 {
+        margin: 0 !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        height: 100%;
+    }
+
+    .map-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100vw;
+        height: 100vh;
+        height: -webkit-fill-available; /* iOS Safari */
+        height: 100dvh; /* Dynamic viewport height for modern browsers */
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .map-header {
+        background: #343a40;
+        color: white;
+        padding: 8px 10px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        z-index: 1000;
+        flex-shrink: 0;
+    }
+
+    .header-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex-wrap: nowrap;
+    }
+
+    .status-compact {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 0.65rem;
+        flex-shrink: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .status-compact span:last-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .tab-icons {
+        display: flex;
+        gap: 4px;
+        flex-shrink: 0;
+    }
+
+    .tab-icon {
+        background: none;
+        border: none;
+        color: rgba(255,255,255,0.7);
+        font-size: 1.2rem;
+        padding: 4px 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .tab-icon:hover, .tab-icon.active {
+        color: white;
+        background: rgba(255,255,255,0.1);
+        border-radius: 4px;
+    }
+
+    .status-bar {
+        display: none; /* Hide original status bar */
+    }
+
+    .status-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .status-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+
+    .status-dot.online { background: #28a745; }
+    .status-dot.offline { background: #dc3545; }
+    .status-dot.detecting { background: #ffc107; animation: pulse 1.5s infinite; }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .map-view {
+        flex: 1;
+        position: relative;
+        overflow: hidden;
+        background: #1a1a1a;
+    }
+
+    .map-canvas-container {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        overflow: hidden;
+    }
+
+    #mapCanvas {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        image-rendering: -moz-crisp-edges;
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+    }
+
+    .no-map-message {
+        text-align: center;
+        color: #6c757d;
+        padding: 40px 20px;
+    }
+
+    .toddler-marker {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        background: #dc3545;
+        border: 3px solid white;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 0 10px rgba(220, 53, 69, 0.8);
+        animation: markerPulse 2s infinite;
+        z-index: 100;
+    }
+
+    @keyframes markerPulse {
+        0%, 100% { transform: translate(-50%, -50%) scale(1); }
+        50% { transform: translate(-50%, -50%) scale(1.2); }
+    }
+
+    .position-label {
+        position: absolute;
+        background: rgba(220, 53, 69, 0.9);
+        color: white;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: bold;
+        white-space: nowrap;
+        transform: translate(-50%, -35px);
+        pointer-events: none;
+    }
+
+    /* Extra small screens (iPhone SE, etc) */
+    @media (max-width: 375px) {
+        .tab-icon {
+            font-size: 1rem;
+            padding: 3px 4px;
+        }
+
+        .status-compact {
+            font-size: 0.6rem;
+            gap: 3px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+        }
+    }
+
+    /* Desktop adjustments */
+    @media (min-width: 768px) {
+        .map-header {
+            padding: 12px 20px;
+        }
+
+        .status-compact {
+            font-size: 0.8rem;
+        }
+
+        .tab-icon {
+            font-size: 1.4rem;
+            padding: 6px 8px;
+        }
+
+        .toddler-marker {
+            width: 30px;
+            height: 30px;
+        }
+
+        .position-label {
+            font-size: 0.85rem;
+            transform: translate(-50%, -45px);
+        }
+    }
+
+    .alert-banner {
+        background: #ffc107;
+        color: #000;
+        padding: 6px 10px;
+        text-align: center;
+        font-weight: bold;
+        font-size: 0.75rem;
+        flex-shrink: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="map-container">
+    <!-- Compact single-line header -->
+    <div class="map-header">
+        <div class="header-content">
+            <!-- Status indicators (compact) -->
+            <div class="status-compact">
+                <span class="status-dot" id="systemStatus"></span>
+                <span id="lastDetection" style="white-space: nowrap;">--</span>
+            </div>
+
+            <!-- Tab icons -->
+            <div class="tab-icons">
+                <a href="/map" class="tab-icon active" title="Map">
+                    <i class="bi bi-geo-alt-fill"></i>
+                </a>
+                <a href="/cameras" class="tab-icon" title="Cameras">
+                    <i class="bi bi-camera"></i>
+                </a>
+                <a href="/images" class="tab-icon" title="Face Recognition">
+                    <i class="bi bi-person-badge"></i>
+                </a>
+                <a href="/matches" class="tab-icon" title="Matches">
+                    <i class="bi bi-search"></i>
+                </a>
+                <a href="/yard" class="tab-icon" title="Yard">
+                    <i class="bi bi-map"></i>
+                </a>
+                <a href="/projection" class="tab-icon" title="Projection">
+                    <i class="bi bi-grid-3x3"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert banner (hidden by default) -->
+    <div id="alertBanner" class="alert-banner" style="display: none;">
+        <i class="bi bi-exclamation-triangle"></i> <span id="alertText"></span>
+    </div>
+
+    <!-- Map view -->
+    <div class="map-view">
+        <div class="map-canvas-container" id="mapContainer">
+            <div class="no-map-message" id="noMapMessage">
+                <i class="bi bi-map" style="font-size: 3rem; opacity: 0.3;"></i>
+                <p>No yard map configured</p>
+                <p><small>Go to the <a href="/yard">Yard tab</a> to create and select a map</small></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let mapCanvas = null;
+let mapCtx = null;
+let currentMap = null;
+let lastPosition = null;
+let updateInterval = null;
+
+// Initialize on page load
+window.addEventListener('DOMContentLoaded', async function() {
+    await loadMapAndStatus();
+    startAutoUpdate();
+});
+
+// Load map and initial status
+async function loadMapAndStatus() {
+    try {
+        // Load the active yard map
+        const mapResponse = await fetch('/get_used_yard_map');
+        const mapResult = await mapResponse.json();
+
+        if (mapResult.status === 'success' && mapResult.map) {
+            currentMap = mapResult.map;
+            await displayMap(currentMap.id);
+        } else {
+            document.getElementById('noMapMessage').style.display = 'block';
+        }
+
+        // Load system status
+        await updateStatus();
+
+        // Load last toddler position
+        await updateToddlerPosition();
+
+    } catch (error) {
+        console.error('Error loading map:', error);
+    }
+}
+
+// Display the yard map
+async function displayMap(mapId) {
+    const container = document.getElementById('mapContainer');
+    document.getElementById('noMapMessage').style.display = 'none';
+
+    // Create canvas if it doesn't exist
+    if (!mapCanvas) {
+        mapCanvas = document.createElement('canvas');
+        mapCanvas.id = 'mapCanvas';
+        container.innerHTML = '';
+        container.appendChild(mapCanvas);
+        mapCtx = mapCanvas.getContext('2d');
+        mapCtx.imageSmoothingEnabled = false;
+    }
+
+    // Load map image
+    const img = new Image();
+    img.onload = function() {
+        // Set canvas internal resolution to match image
+        mapCanvas.width = img.width;
+        mapCanvas.height = img.height;
+
+        // Draw image at native resolution
+        mapCtx.drawImage(img, 0, 0);
+
+        // Draw any existing position
+        if (lastPosition) {
+            drawToddlerMarker(lastPosition);
+        }
+
+        // CSS will scale it to fit the container
+    };
+    img.src = '/yard_image/' + mapId;
+}
+
+// Update system status
+async function updateStatus() {
+    try {
+        // Get detection status
+        const detectionResponse = await fetch('/get_detection_settings');
+        const detectionData = await detectionResponse.json();
+
+        const enabled = detectionData.enabled || false;
+        const systemStatusDot = document.getElementById('systemStatus');
+
+        if (enabled) {
+            systemStatusDot.className = 'status-dot detecting';
+        } else {
+            systemStatusDot.className = 'status-dot offline';
+        }
+
+    } catch (error) {
+        console.error('Error updating status:', error);
+        document.getElementById('systemStatus').className = 'status-dot offline';
+    }
+}
+
+// Update toddler position
+async function updateToddlerPosition() {
+    try {
+        const response = await fetch('/get_last_toddler_position');
+        const data = await response.json();
+
+        if (data.status === 'success' && data.position) {
+            lastPosition = data.position;
+
+            // Update last detection time
+            const lastSeen = new Date(data.position.timestamp);
+            const now = new Date();
+            const diffMs = now - lastSeen;
+            const diffSec = Math.floor(diffMs / 1000);
+            const diffMin = Math.floor(diffSec / 60);
+
+            let timeText;
+            if (diffSec < 60) {
+                timeText = `${diffSec}s ago`;
+            } else if (diffMin < 60) {
+                timeText = `${diffMin}m ago`;
+            } else {
+                const diffHour = Math.floor(diffMin / 60);
+                timeText = `${diffHour}h ago`;
+            }
+
+            document.getElementById('lastDetection').textContent = timeText;
+
+            // Show alert if detection is old
+            if (diffMin > 5) {
+                showAlert(`No detection in ${diffMin} minutes`);
+            } else {
+                hideAlert();
+            }
+
+            // Redraw map with marker
+            if (mapCanvas && currentMap) {
+                displayMap(currentMap.id);
+            }
+        } else {
+            document.getElementById('lastDetection').textContent = 'No detections';
+        }
+
+    } catch (error) {
+        console.error('Error updating position:', error);
+    }
+}
+
+// Draw toddler marker on map
+function drawToddlerMarker(position) {
+    if (!mapCtx || !mapCanvas) return;
+
+    const x = position.map_x;
+    const y = position.map_y;
+
+    // Draw outer glow
+    mapCtx.save();
+    mapCtx.shadowColor = 'rgba(220, 53, 69, 0.8)';
+    mapCtx.shadowBlur = 15;
+
+    // Draw white border circle
+    mapCtx.beginPath();
+    mapCtx.arc(x, y, 18, 0, Math.PI * 2);
+    mapCtx.fillStyle = 'white';
+    mapCtx.fill();
+
+    // Draw red marker
+    mapCtx.beginPath();
+    mapCtx.arc(x, y, 15, 0, Math.PI * 2);
+    mapCtx.fillStyle = '#dc3545';
+    mapCtx.fill();
+
+    mapCtx.restore();
+
+    // Draw label
+    const label = position.subject || 'Toddler';
+    mapCtx.font = 'bold 14px Arial';
+    mapCtx.textAlign = 'center';
+    mapCtx.textBaseline = 'bottom';
+
+    // Background for label
+    const textWidth = mapCtx.measureText(label).width;
+    mapCtx.fillStyle = 'rgba(220, 53, 69, 0.9)';
+    mapCtx.fillRect(x - textWidth/2 - 5, y - 40, textWidth + 10, 20);
+
+    // Label text
+    mapCtx.fillStyle = 'white';
+    mapCtx.fillText(label, x, y - 25);
+}
+
+// Show alert banner
+function showAlert(message) {
+    document.getElementById('alertText').textContent = message;
+    document.getElementById('alertBanner').style.display = 'block';
+}
+
+// Hide alert banner
+function hideAlert() {
+    document.getElementById('alertBanner').style.display = 'none';
+}
+
+// Start auto-update
+function startAutoUpdate() {
+    // Update every 2 seconds
+    updateInterval = setInterval(async () => {
+        await updateStatus();
+        await updateToddlerPosition();
+    }, 2000);
+}
+
+// Stop auto-update when leaving page
+window.addEventListener('beforeunload', function() {
+    if (updateInterval) {
+        clearInterval(updateInterval);
+    }
+});
+</script>
+{% endblock %}

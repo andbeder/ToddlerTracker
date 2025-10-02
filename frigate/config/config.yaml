@@ -1,0 +1,64 @@
+mqtt:
+  host: mosquitto
+  port: 1883
+database:
+  path: /db/frigate.db
+detectors:
+  cpu1:
+    type: cpu
+    num_threads: 3
+objects:
+  track:
+  - person
+  filters:
+    person:
+      min_area: 5000
+      max_area: 100000
+      threshold: 0.5
+cameras:
+  backyard:
+    ffmpeg:
+      inputs:
+      - path: rtsp://admin:hiver300@192.168.0.104:554/h264Preview_01_main
+        roles:
+        - detect
+    detect:
+      enabled: true
+  side_yard:
+    ffmpeg:
+      inputs:
+      - path: rtsp://admin:hiver300@192.168.0.101:554/h264Preview_01_main
+        roles:
+        - detect
+    detect:
+      enabled: true
+  garage:
+    ffmpeg:
+      inputs:
+      - path: rtsp://admin:hiver300@192.168.0.103:554/h264Preview_01_main
+        roles:
+        - detect
+    detect:
+      enabled: true
+record:
+  enabled: true
+  retain:
+    days: 30
+    mode: motion
+  alerts:
+    retain:
+      days: 10
+  detections:
+    retain:
+      days: 10
+snapshots:
+  enabled: true
+  timestamp: false
+  bounding_box: true
+  retain:
+    default: 10
+go2rtc:
+  streams: {}
+detect:
+  enabled: true
+version: 0.16-0

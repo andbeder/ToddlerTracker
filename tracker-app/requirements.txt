@@ -1,0 +1,10 @@
+Flask==2.3.3
+PyYAML==6.0.1
+requests==2.31.0
+numpy>=1.21.0
+scipy>=1.7.0
+Pillow>=9.0.0
+cupy-cuda12x>=12.0.0  # CUDA 12.x support, fallback to CPU if not available
+numba>=0.56.0  # JIT compilation for CUDA kernels
+trimesh>=3.15.0  # 3D mesh processing for PLY files
+pillow-heif>=0.10.0  # For HEIC image conversion

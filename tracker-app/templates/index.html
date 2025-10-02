@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}Camera Manager - Toddler Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Camera Management</h1>
+    <div class="btn-group" role="group">
+        <button class="btn btn-success" onclick="saveConfig()">
+            <i class="bi bi-save"></i> Save Config
+        </button>
+        <button class="btn btn-warning" onclick="restartServices()">
+            <i class="bi bi-arrow-clockwise"></i> Restart Services
+        </button>
+        <a href="{{ url_for('add_camera') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Add Camera
+        </a>
+    </div>
+</div>
+
+{% if cameras %}
+    <div class="row">
+        {% for camera_name, camera_config in cameras.items() %}
+            <div class="col-md-6 col-lg-4 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">{{ camera_name }}</h5>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="toggle_{{ camera_name }}"
+                                   {% if camera_config.get('detect', {}).get('enabled', True) %}checked{% endif %}
+                                   onchange="toggleCamera('{{ camera_name }}', this.checked)">
+                            <label class="form-check-label" for="toggle_{{ camera_name }}">
+                                Detection
+                            </label>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Camera thumbnail -->
+                        <div class="text-center mb-3">
+                            <img src="{{ url_for('camera_thumbnail', camera_name=camera_name) }}"
+                                 alt="{{ camera_name }} thumbnail"
+                                 class="img-fluid rounded thumbnail-image"
+                                 style="max-height: 200px; width: auto;"
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                            <div class="text-muted" style="display: none;">
+                                <i class="bi bi-camera-video-off display-6"></i><br>
+                                <small>Thumbnail not available</small>
+                            </div>
+                        </div>
+
+                        {% set rtsp_path = camera_config.get('ffmpeg', {}).get('inputs', [{}])[0].get('path', '') %}
+                        {% if rtsp_path %}
+                            {% set parsed = parse_rtsp_url(rtsp_path) %}
+                            <p class="card-text">
+                                <strong>IP:</strong> {{ parsed.get('ip_address', 'N/A') }}<br>
+                                <strong>Port:</strong> {{ parsed.get('port', 'N/A') }}<br>
+                                <strong>User:</strong> {{ parsed.get('username', 'N/A') }}<br>
+                                <strong>Status:</strong>
+                                <span class="badge bg-{{ 'success' if camera_config.get('detect', {}).get('enabled', True) else 'secondary' }}">
+                                    {{ 'Active' if camera_config.get('detect', {}).get('enabled', True) else 'Disabled' }}
+                                </span>
+                            </p>
+                        {% endif %}
+                    </div>
+                    <div class="card-footer">
+                        <div class="btn-group w-100" role="group">
+                            <a href="{{ url_for('edit_camera', camera_name=camera_name) }}" class="btn btn-outline-primary btn-sm">
+                                <i class="bi bi-pencil"></i> Edit
+                            </a>
+                            <button class="btn btn-outline-secondary btn-sm" onclick="refreshThumbnail('{{ camera_name }}')">
+                                <i class="bi bi-arrow-clockwise"></i> Refresh
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" onclick="deleteCamera('{{ camera_name }}')">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+    </div>
+{% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-camera-video display-1 text-muted"></i>
+        <h3 class="mt-3">No cameras configured</h3>
+        <p class="text-muted">Add your first camera to get started with Toddler Tracker monitoring.</p>
+        <a href="{{ url_for('add_camera') }}" class="btn btn-primary">
+            <i class="bi bi-plus-circle"></i> Add Your First Camera
+        </a>
+    </div>
+{% endif %}
+
+<!-- Delete confirmation modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete camera "<span id="deleteCameraName"></span>"?</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteForm" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleCamera(cameraName, enabled) {
+    fetch(`/toggle_camera/${cameraName}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.error) {
+            alert('Error: ' + data.error);
+            // Revert the toggle
+            document.getElementById(`toggle_${cameraName}`).checked = !enabled;
+        } else {
+            // Update the status badge
+            location.reload();
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('Error updating camera status');
+        // Revert the toggle
+        document.getElementById(`toggle_${cameraName}`).checked = !enabled;
+    });
+}
+
+function deleteCamera(cameraName) {
+    document.getElementById('deleteCameraName').textContent = cameraName;
+    document.getElementById('deleteForm').action = `/delete_camera/${cameraName}`;
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+function refreshThumbnail(cameraName) {
+    const img = document.querySelector(`img[alt="${cameraName} thumbnail"]`);
+    const fallback = img.nextElementSibling;
+
+    // Show loading state
+    const originalSrc = img.src;
+    img.style.opacity = '0.5';
+
+    // Add timestamp to force refresh
+    const newSrc = `/camera_thumbnail/${cameraName}?t=${Date.now()}`;
+
+    img.onload = function() {
+        img.style.opacity = '1';
+        img.style.display = 'block';
+        fallback.style.display = 'none';
+        img.onload = null;
+        img.onerror = null;
+    };
+
+    img.onerror = function() {
+        img.style.opacity = '1';
+        img.style.display = 'none';
+        fallback.style.display = 'block';
+        img.onload = null;
+        img.onerror = null;
+    };
+
+    img.src = newSrc;
+}
+
+function saveConfig() {
+    const button = event.target.closest('button');
+    const originalText = button.innerHTML;
+
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<i class="bi bi-hourglass-split"></i> Saving...';
+
+    fetch('/save_config', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success state briefly
+            button.innerHTML = '<i class="bi bi-check-circle"></i> Saved!';
+            button.className = 'btn btn-success';
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 2000);
+
+            // Show success message
+            showAlert(data.message, 'success');
+        } else {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            showAlert('Error: ' + (data.error || 'Failed to save config'), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        button.innerHTML = originalText;
+        button.disabled = false;
+        showAlert('Error saving configuration', 'danger');
+    });
+}
+
+function restartServices() {
+    const button = event.target.closest('button');
+    const originalText = button.innerHTML;
+
+    // Confirm restart
+    if (!confirm('Are you sure you want to restart detection services? This may take a few moments.')) {
+        return;
+    }
+
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<i class="bi bi-hourglass-split"></i> Restarting...';
+
+    fetch('/restart_services', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success state briefly
+            button.innerHTML = '<i class="bi bi-check-circle"></i> Restarted!';
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 3000);
+
+            // Show success message
+            showAlert(data.message, 'success');
+        } else {
+            button.innerHTML = originalText;
+            button.disabled = false;
+            showAlert('Error: ' + (data.error || 'Failed to restart services'), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        button.innerHTML = originalText;
+        button.disabled = false;
+        showAlert('Error restarting services', 'danger');
+    });
+}
+
+function showAlert(message, type) {
+    // Create alert element
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 1050; max-width: 400px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    // Add to page
+    document.body.appendChild(alertDiv);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}

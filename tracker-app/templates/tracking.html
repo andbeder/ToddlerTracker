@@ -1,0 +1,558 @@
+{% extends "base.html" %}
+
+{% block title %}Multi-Camera Tracking - Toddler Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-radar"></i> Multi-Camera Tracking</h2>
+        <p class="text-muted">Real-time tracking across multiple cameras with handoff detection.</p>
+    </div>
+</div>
+
+<!-- Tracking Statistics -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h3 class="mb-0" id="activeTracks">-</h3>
+                <small>Active Tracks</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h3 class="mb-0" id="toddlerTracks">-</h3>
+                <small>Toddler Tracks</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h3 class="mb-0" id="camerasActive">-</h3>
+                <small>Cameras Active</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body text-center">
+                <h3 class="mb-0" id="recentHandoffs">-</h3>
+                <small>Recent Handoffs</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Live Camera Views -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-camera-video"></i> Live Camera Views</h5>
+                <div class="btn-group btn-group-sm" role="group">
+                    <input type="checkbox" class="btn-check" id="showBboxes" checked>
+                    <label class="btn btn-outline-primary" for="showBboxes">Show Boxes</label>
+
+                    <input type="checkbox" class="btn-check" id="showTrackIds" checked>
+                    <label class="btn btn-outline-secondary" for="showTrackIds">Show IDs</label>
+
+                    <input type="checkbox" class="btn-check" id="showToddlerOnly">
+                    <label class="btn btn-outline-success" for="showToddlerOnly">Toddler Only</label>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="row" id="cameraViews">
+                    <!-- Camera feeds will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Active Tracks Table -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-list-task"></i> Active Tracks</h5>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="refreshTracks()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="clearAllTracking()">
+                        <i class="bi bi-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Global ID</th>
+                                <th>Track ID</th>
+                                <th>Camera</th>
+                                <th>Position</th>
+                                <th>Confidence</th>
+                                <th>Type</th>
+                                <th>Age</th>
+                                <th>Velocity</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tracksTableBody">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted">Loading tracks...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Handoffs -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-arrow-left-right"></i> Recent Camera Handoffs</h5>
+            </div>
+            <div class="card-body">
+                <div id="handoffsContainer">
+                    <div class="text-center text-muted">
+                        <i class="bi bi-arrow-left-right" style="font-size: 2rem;"></i>
+                        <p>No recent handoffs</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Track History Modal -->
+<div class="modal fade" id="trackHistoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Track History</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <canvas id="trackHistoryChart" width="400" height="200"></canvas>
+                <div id="trackHistoryDetails" class="mt-3"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Mark as Toddler Modal -->
+<div class="modal fade" id="markToddlerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Mark as Toddler</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Mark this track as belonging to the toddler?</p>
+                <div class="mb-3">
+                    <label for="toddlerConfidence" class="form-label">Confidence Level</label>
+                    <input type="range" class="form-range" id="toddlerConfidence" min="0" max="100" value="95">
+                    <div class="d-flex justify-content-between">
+                        <small>0%</small>
+                        <span id="confidenceValue">95%</span>
+                        <small>100%</small>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="confirmMarkToddler()">Mark as Toddler</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let trackingData = {
+    tracks: [],
+    handoffs: [],
+    stats: {}
+};
+
+let selectedTrackId = null;
+let updateInterval = null;
+
+// Initialize page
+document.addEventListener('DOMContentLoaded', function() {
+    loadCameraViews();
+    startLiveUpdates();
+
+    // Setup confidence slider
+    document.getElementById('toddlerConfidence').addEventListener('input', function(e) {
+        document.getElementById('confidenceValue').textContent = e.target.value + '%';
+    });
+});
+
+// Load camera views
+function loadCameraViews() {
+    fetch('/get_cameras')
+        .then(response => response.json())
+        .then(cameras => {
+            const container = document.getElementById('cameraViews');
+            container.innerHTML = '';
+
+            Object.keys(cameras || {}).forEach(cameraName => {
+                const cameraDiv = document.createElement('div');
+                cameraDiv.className = 'col-md-6 col-lg-4 mb-3';
+                cameraDiv.innerHTML = `
+                    <div class="card">
+                        <div class="card-header p-2">
+                            <h6 class="mb-0">${cameraName}</h6>
+                        </div>
+                        <div class="card-body p-2">
+                            <div class="camera-container position-relative" style="height: 200px; background: #f8f9fa; border: 1px solid #dee2e6;">
+                                <img src="/camera_thumbnail/${cameraName}"
+                                     class="camera-feed w-100 h-100"
+                                     style="object-fit: cover;"
+                                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                                <div class="camera-placeholder d-none text-center d-flex align-items-center justify-content-center h-100">
+                                    <div>
+                                        <i class="bi bi-camera" style="font-size: 2rem; color: #6c757d;"></i>
+                                        <br><small class="text-muted">${cameraName}</small>
+                                    </div>
+                                </div>
+                                <canvas class="tracking-overlay position-absolute top-0 start-0 w-100 h-100"
+                                        data-camera="${cameraName}" style="pointer-events: none;"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(cameraDiv);
+            });
+        })
+        .catch(error => console.error('Error loading cameras:', error));
+}
+
+// Start live updates
+function startLiveUpdates() {
+    updateInterval = setInterval(() => {
+        refreshTracks();
+        refreshHandoffs();
+        updateTrackingOverlays();
+    }, 2000); // Update every 2 seconds
+}
+
+// Refresh tracking data
+function refreshTracks() {
+    fetch('/tracking/get_active_tracks')
+        .then(response => response.json())
+        .then(data => {
+            trackingData.tracks = data.tracks || [];
+            trackingData.stats = data.stats || {};
+            updateTrackingStats();
+            updateTracksTable();
+        })
+        .catch(error => console.error('Error refreshing tracks:', error));
+}
+
+// Refresh handoffs
+function refreshHandoffs() {
+    fetch('/tracking/get_handoffs')
+        .then(response => response.json())
+        .then(data => {
+            trackingData.handoffs = data.handoffs || [];
+            updateHandoffsDisplay();
+        })
+        .catch(error => console.error('Error refreshing handoffs:', error));
+}
+
+// Update tracking statistics
+function updateTrackingStats() {
+    const stats = trackingData.stats;
+    document.getElementById('activeTracks').textContent = stats.active_tracks || 0;
+    document.getElementById('toddlerTracks').textContent = stats.toddler_tracks || 0;
+    document.getElementById('camerasActive').textContent = stats.cameras_active || 0;
+    document.getElementById('recentHandoffs').textContent = stats.recent_handoffs || 0;
+}
+
+// Update tracks table
+function updateTracksTable() {
+    const tbody = document.getElementById('tracksTableBody');
+
+    if (trackingData.tracks.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">No active tracks</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '';
+
+    trackingData.tracks.forEach(track => {
+        const row = document.createElement('tr');
+        row.className = track.is_toddler ? 'table-success' : '';
+
+        const age = Math.round(track.age || 0);
+        const velocity = track.velocity ?
+            `${Math.round(track.velocity[0])}, ${Math.round(track.velocity[1])}` : '0, 0';
+
+        const bbox = track.bbox ?
+            `(${Math.round(track.bbox[0])}, ${Math.round(track.bbox[1])})` : 'N/A';
+
+        row.innerHTML = `
+            <td><span class="badge bg-primary">${track.global_id}</span></td>
+            <td><code>${track.track_id}</code></td>
+            <td><span class="badge bg-secondary">${track.camera}</span></td>
+            <td>${bbox}</td>
+            <td>
+                <div class="progress" style="height: 20px;">
+                    <div class="progress-bar ${track.confidence > 0.8 ? 'bg-success' : track.confidence > 0.6 ? 'bg-warning' : 'bg-danger'}"
+                         style="width: ${track.confidence * 100}%">
+                        ${Math.round(track.confidence * 100)}%
+                    </div>
+                </div>
+            </td>
+            <td>
+                ${track.is_toddler ?
+                    '<span class="badge bg-success">Toddler</span>' :
+                    '<span class="badge bg-secondary">Person</span>'}
+            </td>
+            <td>${age}s</td>
+            <td><small>${velocity}</small></td>
+            <td>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-info" onclick="showTrackHistory('${track.global_id}')">
+                        <i class="bi bi-graph-up"></i>
+                    </button>
+                    ${!track.is_toddler ?
+                        `<button class="btn btn-outline-success" onclick="markAsToddler('${track.track_id}')">
+                            <i class="bi bi-person-check"></i>
+                        </button>` : ''}
+                </div>
+            </td>
+        `;
+
+        tbody.appendChild(row);
+    });
+}
+
+// Update tracking overlays on camera feeds
+function updateTrackingOverlays() {
+    const showBboxes = document.getElementById('showBboxes').checked;
+    const showTrackIds = document.getElementById('showTrackIds').checked;
+    const showToddlerOnly = document.getElementById('showToddlerOnly').checked;
+
+    // Clear all overlays
+    document.querySelectorAll('.tracking-overlay').forEach(canvas => {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        const camera = canvas.dataset.camera;
+        const cameraTracks = trackingData.tracks.filter(t =>
+            t.camera === camera && (!showToddlerOnly || t.is_toddler)
+        );
+
+        // Set canvas size to match container
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
+
+        // Draw bounding boxes and IDs
+        cameraTracks.forEach(track => {
+            if (!track.bbox) return;
+
+            const [x, y, w, h] = track.bbox;
+
+            // Scale coordinates to canvas size (assuming camera feed is scaled)
+            const scaleX = canvas.width / 1920; // Assume 1920px camera width
+            const scaleY = canvas.height / 1080; // Assume 1080px camera height
+
+            const scaledX = x * scaleX;
+            const scaledY = y * scaleY;
+            const scaledW = w * scaleX;
+            const scaledH = h * scaleY;
+
+            // Choose color based on track type
+            const color = track.is_toddler ? '#28a745' : '#007bff';
+
+            if (showBboxes) {
+                // Draw bounding box
+                ctx.strokeStyle = color;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(scaledX, scaledY, scaledW, scaledH);
+
+                // Draw confidence bar
+                const confWidth = scaledW;
+                const confHeight = 4;
+                ctx.fillStyle = color;
+                ctx.fillRect(scaledX, scaledY - confHeight - 2, confWidth * track.confidence, confHeight);
+            }
+
+            if (showTrackIds) {
+                // Draw track ID
+                ctx.fillStyle = color;
+                ctx.font = '12px sans-serif';
+                ctx.fillText(track.global_id, scaledX, scaledY - 8);
+            }
+        });
+    });
+}
+
+// Update handoffs display
+function updateHandoffsDisplay() {
+    const container = document.getElementById('handoffsContainer');
+
+    if (trackingData.handoffs.length === 0) {
+        container.innerHTML = `
+            <div class="text-center text-muted">
+                <i class="bi bi-arrow-left-right" style="font-size: 2rem;"></i>
+                <p>No recent handoffs</p>
+            </div>
+        `;
+        return;
+    }
+
+    let html = '';
+    trackingData.handoffs.forEach(handoff => {
+        const timestamp = new Date(handoff.timestamp).toLocaleTimeString();
+        html += `
+            <div class="alert alert-info d-flex align-items-center">
+                <i class="bi bi-arrow-left-right me-3"></i>
+                <div class="flex-grow-1">
+                    <strong>${handoff.global_id}</strong> moved from
+                    <span class="badge bg-secondary">${handoff.from_camera}</span> to
+                    <span class="badge bg-secondary">${handoff.to_camera}</span>
+                    <small class="d-block text-muted">${timestamp} - Confidence: ${Math.round(handoff.confidence * 100)}%</small>
+                </div>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html;
+}
+
+// Show track history modal
+function showTrackHistory(globalId) {
+    fetch(`/tracking/get_track_history/${globalId}`)
+        .then(response => response.json())
+        .then(data => {
+            // Display track history chart and details
+            const modal = new bootstrap.Modal(document.getElementById('trackHistoryModal'));
+
+            // Update modal content with track history
+            const detailsDiv = document.getElementById('trackHistoryDetails');
+            let html = '<h6>Camera Path:</h6><ul>';
+
+            data.history.forEach(pos => {
+                const time = new Date(pos.timestamp).toLocaleTimeString();
+                html += `<li>${pos.camera} at ${time}</li>`;
+            });
+
+            html += '</ul>';
+            detailsDiv.innerHTML = html;
+
+            modal.show();
+        })
+        .catch(error => console.error('Error loading track history:', error));
+}
+
+// Mark track as toddler
+function markAsToddler(trackId) {
+    selectedTrackId = trackId;
+    const modal = new bootstrap.Modal(document.getElementById('markToddlerModal'));
+    modal.show();
+}
+
+// Confirm mark as toddler
+function confirmMarkToddler() {
+    const confidence = document.getElementById('toddlerConfidence').value / 100;
+
+    fetch('/tracking/mark_as_toddler', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            track_id: selectedTrackId,
+            confidence: confidence
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showAlert('Track marked as toddler successfully', 'success');
+            refreshTracks();
+        } else {
+            showAlert(data.message, 'danger');
+        }
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('markToddlerModal'));
+        modal.hide();
+    })
+    .catch(error => {
+        console.error('Error marking as toddler:', error);
+        showAlert('Error marking track as toddler', 'danger');
+    });
+}
+
+// Clear all tracking data
+function clearAllTracking() {
+    if (!confirm('Are you sure you want to clear all tracking data including tracks and handoffs?')) {
+        return;
+    }
+
+    fetch('/tracking/clear_all', {
+        method: 'DELETE'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showAlert('All tracking data cleared successfully', 'success');
+            refreshTracks();
+            refreshHandoffs();
+        } else {
+            showAlert(data.message, 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error clearing tracking data:', error);
+        showAlert('Error clearing tracking data', 'danger');
+    });
+}
+
+// Show alert message
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+
+    if (type === 'success' || type === 'info') {
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.remove();
+            }
+        }, 5000);
+    }
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (updateInterval) {
+        clearInterval(updateInterval);
+    }
+});
+</script>
+{% endblock %}

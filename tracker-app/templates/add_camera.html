@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Add Camera - Toddler Tracker{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-plus-circle"></i> Add New Camera
+                </h4>
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="camera_name" class="form-label">Camera Name *</label>
+                        <input type="text" class="form-control" id="camera_name" name="camera_name"
+                               placeholder="e.g., front_door, backyard" required>
+                        <div class="form-text">Use lowercase letters, numbers, and underscores only.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="ip_address" class="form-label">IP Address *</label>
+                        <input type="text" class="form-control" id="ip_address" name="ip_address"
+                               placeholder="e.g., 192.168.1.100" required>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="username" class="form-label">Username *</label>
+                                <input type="text" class="form-control" id="username" name="username"
+                                       placeholder="Camera username" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Password *</label>
+                                <input type="password" class="form-control" id="password" name="password"
+                                       placeholder="Camera password" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="port" class="form-label">RTSP Port</label>
+                                <input type="number" class="form-control" id="port" name="port"
+                                       value="554" min="1" max="65535">
+                                <div class="form-text">Default: 554</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="stream_path" class="form-label">Stream Path</label>
+                                <input type="text" class="form-control" id="stream_path" name="stream_path"
+                                       value="/stream" placeholder="/stream">
+                                <div class="form-text">Default: /stream</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i>
+                        <strong>Preview RTSP URL:</strong><br>
+                        <code id="rtsp_preview">rtsp://username:password@ip:port/stream</code>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">Cancel</a>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-plus-circle"></i> Add Camera
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function updatePreview() {
+    const username = document.getElementById('username').value || 'username';
+    const password = document.getElementById('password').value || 'password';
+    const ip = document.getElementById('ip_address').value || 'ip';
+    const port = document.getElementById('port').value || '554';
+    const path = document.getElementById('stream_path').value || '/stream';
+
+    const preview = `rtsp://${username}:${password}@${ip}:${port}${path}`;
+    document.getElementById('rtsp_preview').textContent = preview;
+}
+
+// Update preview on input changes
+document.addEventListener('DOMContentLoaded', function() {
+    const inputs = ['username', 'password', 'ip_address', 'port', 'stream_path'];
+    inputs.forEach(id => {
+        document.getElementById(id).addEventListener('input', updatePreview);
+    });
+    updatePreview();
+});
+</script>
+{% endblock %}

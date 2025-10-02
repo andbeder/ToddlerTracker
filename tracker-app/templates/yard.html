@@ -1,0 +1,1000 @@
+{% extends "base.html" %}
+
+{% block title %}Yard Mapping - Toddler Tracker{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2><i class="bi bi-map"></i> Yard Point Cloud Processing</h2>
+        <p class="text-muted">Create top-down yard maps from COLMAP point cloud reconstruction.</p>
+    </div>
+</div>
+
+<!-- Step 1: PLY File Upload -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-upload"></i> Step 1: Upload Point Cloud File</h5>
+            </div>
+            <div class="card-body">
+                <form id="plyUploadForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label for="plyFile" class="form-label">COLMAP fused.ply File</label>
+                        <input type="file" class="form-control" id="plyFile" name="ply_file" accept=".ply" required>
+                        <div class="form-text">Upload the fused.ply file from your COLMAP reconstruction</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="uploadBtn">
+                        <i class="bi bi-cloud-upload"></i> Upload PLY File
+                    </button>
+                </form>
+
+                <div id="uploadStatus" class="mt-3" style="display: none;">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> <span id="uploadMessage"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 2: Boundary Configuration -->
+<div class="row mb-4" id="boundarySection" style="display: none;">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-bounding-box"></i> Step 2: Boundary Detection</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="percentileMin" class="form-label">Min Percentile (%)</label>
+                        <input type="number" class="form-control" id="percentileMin" value="2" min="0" max="50" step="0.5">
+                    </div>
+                    <div class="col-md-6">
+                        <label for="percentileMax" class="form-label">Max Percentile (%)</label>
+                        <input type="number" class="form-control" id="percentileMax" value="98" min="50" max="100" step="0.5">
+                    </div>
+                </div>
+
+                <button class="btn btn-success" onclick="scanBoundaries()">
+                    <i class="bi bi-radar"></i> Scan Boundaries
+                </button>
+
+                <div id="boundaryResults" class="mt-4" style="display: none;">
+                    <h6>Detected Boundaries:</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Center X:</strong></td>
+                                    <td id="centerX">-</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Center Z:</strong></td>
+                                    <td id="centerZ">-</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Width:</strong></td>
+                                    <td id="width">-</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Height:</strong></td>
+                                    <td id="height">-</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-sm">
+                                <tr>
+                                    <td><strong>Total Points:</strong></td>
+                                    <td id="totalPoints">-</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Filtered Points:</strong></td>
+                                    <td id="filteredPoints">-</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Retained:</strong></td>
+                                    <td id="retainedPercentage">-</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Y Range:</strong></td>
+                                    <td id="yRange">-</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 3: Projection Settings -->
+<div class="row mb-4" id="projectionSection" style="display: none;">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-sliders"></i> Step 3: Projection Settings</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label for="centerX" class="form-label">Center X</label>
+                        <input type="number" class="form-control" id="centerX" value="0" step="0.1">
+                        <div class="form-text">X coordinate of map center</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="centerY" class="form-label">Center Y</label>
+                        <input type="number" class="form-control" id="centerY" value="0" step="0.1">
+                        <div class="form-text">Y coordinate of map center</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="resolution" class="form-label">Resolution (m/px)</label>
+                        <input type="number" class="form-control" id="resolution" value="0.01" min="0.001" max="1" step="0.001">
+                        <div class="form-text">Meters per pixel</div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rotation" class="form-label">Rotation (degrees)</label>
+                        <input type="number" class="form-control" id="rotation" value="0" min="-180" max="180" step="1">
+                        <div class="form-text">Rotation angle</div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <label for="mapName" class="form-label">Map Name</label>
+                        <input type="text" class="form-control" id="mapName" placeholder="e.g., backyard_map">
+                        <div class="form-text">Name for saving the map</div>
+                    </div>
+                    <div class="col-md-4">
+                        <label for="algorithm" class="form-label">Rasterization Algorithm</label>
+                        <select class="form-select" id="algorithm">
+                            <option value="simple_flip" selected>Simple Flip (XZ Projection, Correct Orientation)</option>
+                            <option value="simple_average">Simple Average (Smooth, Fills Gaps)</option>
+                            <option value="sharp_exact">Sharp Exact (Crisp Edges, Black Background)</option>
+                            <option value="simple_ply">Simple PLY (Direct, Exact Colors, Black BG)</option>
+                            <option value="ground_filter">Ground Filter (Remove Trees)</option>
+                            <option value="cpu_fallback">CPU Fallback (Slower)</option>
+                        </select>
+                        <div class="form-text">Algorithm for point cloud rendering</div>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="d-flex gap-2 w-100">
+                            <button class="btn btn-primary" onclick="projectYard()">
+                                <i class="bi bi-image"></i> Project Yard
+                            </button>
+                            <button class="btn btn-outline-primary" onclick="regenerateMap()" id="regenerateBtn" style="display: none;">
+                                <i class="bi bi-arrow-clockwise"></i> Regenerate
+                            </button>
+                            <button class="btn btn-success" onclick="saveYardMap()" id="saveBtn" style="display: none;">
+                                <i class="bi bi-save"></i> Save Map
+                            </button>
+                            <button class="btn btn-info" onclick="downloadYardImage()" id="downloadBtn" style="display: none;">
+                                <i class="bi bi-download"></i> Download PNG
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 4: Visualization -->
+<div class="row mb-4" id="visualizationSection" style="display: none;">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-image"></i> Yard Map Visualization</h5>
+            </div>
+            <div class="card-body text-center">
+                <div id="yardImageContainer" style="position: relative; display: inline-block; max-width: 100%;">
+                    <canvas id="yardCanvas" style="border: 1px solid #dee2e6; cursor: grab; width: 100%; height: auto; image-rendering: -moz-crisp-edges; image-rendering: -webkit-optimize-contrast; image-rendering: pixelated; image-rendering: crisp-edges;"></canvas>
+                    <div id="interactionOverlay" style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); color: white; padding: 8px; border-radius: 4px; font-size: 12px; display: none;">
+                        <div>Mouse: Pan &amp; Zoom</div>
+                        <div>Wheel: Zoom</div>
+                        <div>Shift+Drag: Rotate</div>
+                    </div>
+                </div>
+                <div id="imageInfo" class="mt-3">
+                    <span class="badge bg-secondary" id="imageResolution">-</span>
+                    <span class="badge bg-info" id="imagePoints">-</span>
+                    <span class="badge bg-warning" id="imageCenter">-</span>
+                    <span class="badge bg-success" id="imageScale">-</span>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">Use mouse to pan, zoom, and rotate the map. Hold Shift while dragging to rotate.</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Saved Yard Maps -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-collection"></i> Saved Yard Maps</h5>
+                <button class="btn btn-outline-secondary btn-sm" onclick="loadSavedMaps()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="savedMaps">
+                    <div class="text-center text-muted">
+                        <i class="bi bi-map" style="font-size: 2rem;"></i>
+                        <p>Loading saved maps...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Processing Modal -->
+<div class="modal fade" id="processingModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center p-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Processing...</span>
+                </div>
+                <h5 id="processingTitle">Processing Point Cloud</h5>
+                <p class="text-muted mb-0" id="processingMessage">Please wait...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div id="projectionToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true">
+        <div class="toast-header">
+            <div class="spinner-border spinner-border-sm text-primary me-2" role="status" id="toastSpinner">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <i class="bi bi-image text-primary me-2" id="toastIcon" style="display: none;"></i>
+            <strong class="me-auto" id="toastTitle">Generating Yard Map</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+        </div>
+        <div class="toast-body" id="toastMessage">
+            Projecting point cloud... Please wait for the map to appear.
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let uploadedFile = null;
+let currentBoundaries = null;
+let projectedImage = null;
+let hasStoredPly = {{ has_ply_file|tojson }};
+let storedPlyInfo = null;
+
+// Interactive map state
+let mapState = {
+    centerX: 0,
+    centerY: 0,
+    rotation: 0,
+    baseRotation: 0, // Rotation already applied to the base image from server
+    resolution: 0.01, // m/px
+    canvas: null,
+    ctx: null,
+    baseImage: null,
+    isDragging: false,
+    lastMouse: { x: 0, y: 0 },
+    panOffset: { x: 0, y: 0 },
+    zoom: 1.0
+};
+
+// Check for stored PLY file on page load
+window.addEventListener('DOMContentLoaded', async function() {
+    if (hasStoredPly) {
+        await checkStoredPly();
+    }
+    initializeCanvas();
+});
+
+// Initialize interactive canvas
+function initializeCanvas() {
+    mapState.canvas = document.getElementById('yardCanvas');
+    mapState.ctx = mapState.canvas.getContext('2d');
+
+    // Disable image smoothing for sharp pixel-perfect rendering
+    mapState.ctx.imageSmoothingEnabled = false;
+    mapState.ctx.mozImageSmoothingEnabled = false;
+    mapState.ctx.webkitImageSmoothingEnabled = false;
+    mapState.ctx.msImageSmoothingEnabled = false;
+
+    // Set canvas size
+    mapState.canvas.width = 800;
+    mapState.canvas.height = 600;
+
+    setupCanvasInteractions();
+}
+
+// Setup mouse and wheel interactions for canvas
+function setupCanvasInteractions() {
+    const canvas = mapState.canvas;
+    const overlay = document.getElementById('interactionOverlay');
+
+    canvas.addEventListener('mouseenter', () => {
+        overlay.style.display = 'block';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+        overlay.style.display = 'none';
+        mapState.isDragging = false;
+        canvas.style.cursor = 'grab';
+    });
+
+    canvas.addEventListener('mousedown', (e) => {
+        mapState.isDragging = true;
+        mapState.lastMouse = { x: e.offsetX, y: e.offsetY };
+        canvas.style.cursor = 'grabbing';
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+        if (!mapState.isDragging || !mapState.baseImage) return;
+
+        const deltaX = e.offsetX - mapState.lastMouse.x;
+        const deltaY = e.offsetY - mapState.lastMouse.y;
+
+        if (e.shiftKey) {
+            // Rotation mode
+            const centerX = canvas.width / 2;
+            const centerY = canvas.height / 2;
+
+            const angle1 = Math.atan2(mapState.lastMouse.y - centerY, mapState.lastMouse.x - centerX);
+            const angle2 = Math.atan2(e.offsetY - centerY, e.offsetX - centerX);
+
+            const deltaAngle = (angle2 - angle1) * 180 / Math.PI;
+            mapState.rotation += deltaAngle;
+
+            // Constrain rotation to -180 to 180
+            while (mapState.rotation > 180) mapState.rotation -= 360;
+            while (mapState.rotation < -180) mapState.rotation += 360;
+
+            document.getElementById('rotation').value = Math.round(mapState.rotation);
+        } else {
+            // Pan mode - update pan offset for immediate visual feedback
+            mapState.panOffset.x += deltaX;
+            mapState.panOffset.y += deltaY;
+        }
+
+        mapState.lastMouse = { x: e.offsetX, y: e.offsetY };
+        redrawCanvas();
+        updateInfoBadges();
+    });
+
+    canvas.addEventListener('mouseup', () => {
+        mapState.isDragging = false;
+        canvas.style.cursor = 'grab';
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+
+        const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+        mapState.zoom *= zoomFactor;
+        mapState.zoom = Math.max(0.1, Math.min(10, mapState.zoom));
+
+        // Update resolution based on zoom
+        const baseResolution = 0.01;
+        mapState.resolution = baseResolution / mapState.zoom;
+        document.getElementById('resolution').value = mapState.resolution.toFixed(4);
+
+        redrawCanvas();
+        updateInfoBadges();
+    });
+}
+
+// Redraw canvas with current state
+function redrawCanvas() {
+    if (!mapState.baseImage || !mapState.ctx) return;
+
+    const ctx = mapState.ctx;
+    const canvas = mapState.canvas;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Save context state
+    ctx.save();
+
+    // Apply transformations
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.translate(mapState.panOffset.x, mapState.panOffset.y);
+    ctx.scale(mapState.zoom, mapState.zoom);
+    // Only apply additional rotation beyond what's already in the image
+    const additionalRotation = mapState.rotation - (mapState.baseRotation || 0);
+    ctx.rotate(additionalRotation * Math.PI / 180);
+    ctx.translate(-mapState.baseImage.width / 2, -mapState.baseImage.height / 2);
+
+    // Draw image
+    ctx.drawImage(mapState.baseImage, 0, 0);
+
+    // Restore context state
+    ctx.restore();
+}
+
+// Update info badges
+function updateInfoBadges() {
+    document.getElementById('imageCenter').textContent = `Center: (${mapState.centerX.toFixed(2)}, ${mapState.centerY.toFixed(2)})`;
+    document.getElementById('imageScale').textContent = `Zoom: ${mapState.zoom.toFixed(2)}x`;
+}
+
+// Check for stored PLY file
+async function checkStoredPly() {
+    try {
+        const response = await fetch('/get_latest_ply_info');
+        const result = await response.json();
+
+        if (result.status === 'success' && result.has_file) {
+            storedPlyInfo = result.file_info;
+            hasStoredPly = true;
+
+            // Show status
+            const statusDiv = document.getElementById('uploadStatus');
+            const messageSpan = document.getElementById('uploadMessage');
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'alert alert-success mt-3';
+            messageSpan.textContent = `Using stored PLY: ${storedPlyInfo.name} (${storedPlyInfo.vertex_count.toLocaleString()} vertices)`;
+
+            // Show boundary section
+            document.getElementById('boundarySection').style.display = 'block';
+
+            // Update upload form text
+            const uploadBtn = document.getElementById('uploadBtn');
+            uploadBtn.innerHTML = '<i class="bi bi-cloud-upload"></i> Replace PLY File';
+        }
+    } catch (error) {
+        console.error('Error checking stored PLY:', error);
+    }
+}
+
+// Handle PLY file upload
+document.getElementById('plyUploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const fileInput = document.getElementById('plyFile');
+    uploadedFile = fileInput.files[0];
+
+    if (!uploadedFile) {
+        showAlert('Please select a PLY file', 'warning');
+        return;
+    }
+
+    // Upload and store the file
+    const formData = new FormData();
+    formData.append('ply_file', uploadedFile);
+
+    showProcessingModal('Uploading PLY File', 'Storing file permanently...');
+
+    try {
+        const response = await fetch('/upload_ply', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+        hideProcessingModal();
+
+        if (result.status === 'success') {
+            // Update status
+            const statusDiv = document.getElementById('uploadStatus');
+            const messageSpan = document.getElementById('uploadMessage');
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'alert alert-success mt-3';
+            messageSpan.textContent = `Stored: ${uploadedFile.name} (${result.vertex_count.toLocaleString()} vertices)`;
+
+            // Show boundary section
+            document.getElementById('boundarySection').style.display = 'block';
+
+            // Update state
+            hasStoredPly = true;
+            uploadedFile = null; // Clear local file since it's now stored
+
+            showAlert('PLY file uploaded and stored successfully. Now scan boundaries.', 'success');
+        } else {
+            showAlert(result.message, 'danger');
+        }
+    } catch (error) {
+        hideProcessingModal();
+        showAlert('Error uploading PLY file: ' + error.message, 'danger');
+    }
+});
+
+// Scan boundaries
+async function scanBoundaries() {
+    if (!uploadedFile && !hasStoredPly) {
+        showAlert('Please upload a PLY file first', 'warning');
+        return;
+    }
+
+    try {
+        let response;
+
+        if (uploadedFile) {
+            // Use local file (for backward compatibility)
+            const formData = new FormData();
+            formData.append('ply_file', uploadedFile);
+            formData.append('percentile_min', document.getElementById('percentileMin').value);
+            formData.append('percentile_max', document.getElementById('percentileMax').value);
+
+            response = await fetch('/scan_boundaries_upload', {
+                method: 'POST',
+                body: formData
+            });
+        } else {
+            // Use stored PLY
+            response = await fetch('/scan_boundaries', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    percentile_min: parseFloat(document.getElementById('percentileMin').value),
+                    percentile_max: parseFloat(document.getElementById('percentileMax').value)
+                })
+            });
+        }
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            currentBoundaries = result.boundaries;
+            displayBoundaries(result.boundaries);
+            document.getElementById('projectionSection').style.display = 'block';
+            showAlert('Boundaries detected successfully', 'success');
+        } else {
+            showAlert(result.message, 'danger');
+        }
+
+    } catch (error) {
+        showAlert('Error scanning boundaries: ' + error.message, 'danger');
+    }
+}
+
+// Display boundary information
+function displayBoundaries(boundaries) {
+    // Update detected boundaries display
+    document.getElementById('centerX').value = boundaries.center_x.toFixed(3);
+    document.getElementById('centerY').value = boundaries.center_z.toFixed(3); // Z becomes Y
+
+    // Update map state
+    mapState.centerX = boundaries.center_x;
+    mapState.centerY = boundaries.center_z;
+
+    // Update boundary display table
+    document.querySelector('#boundaryResults #centerX').textContent = boundaries.center_x.toFixed(3);
+    document.querySelector('#boundaryResults #centerZ').textContent = boundaries.center_z.toFixed(3);
+    document.querySelector('#boundaryResults #width').textContent = boundaries.width.toFixed(3);
+    document.querySelector('#boundaryResults #height').textContent = boundaries.height.toFixed(3);
+    document.querySelector('#boundaryResults #totalPoints').textContent = boundaries.total_points.toLocaleString();
+    document.querySelector('#boundaryResults #filteredPoints').textContent = boundaries.filtered_points.toLocaleString();
+    document.querySelector('#boundaryResults #retainedPercentage').textContent = boundaries.filter_percentage.toFixed(1) + '%';
+    document.querySelector('#boundaryResults #yRange').textContent = `${boundaries.y_min.toFixed(2)} to ${boundaries.y_max.toFixed(2)}`;
+    document.getElementById('boundaryResults').style.display = 'block';
+}
+
+// Project yard
+async function projectYard() {
+    if ((!uploadedFile && !hasStoredPly) || !currentBoundaries) {
+        showAlert('Please complete previous steps first', 'warning');
+        return;
+    }
+
+    // Get current values from inputs
+    mapState.centerX = parseFloat(document.getElementById('centerX').value);
+    mapState.centerY = parseFloat(document.getElementById('centerY').value);
+    mapState.rotation = parseFloat(document.getElementById('rotation').value);
+    mapState.resolution = parseFloat(document.getElementById('resolution').value);
+
+    await generateMap();
+}
+
+// Download the generated yard image
+function downloadYardImage() {
+    if (!mapState.baseImage) {
+        showAlert('No image to download', 'warning');
+        return;
+    }
+
+    // Create a temporary link to download the image
+    const link = document.createElement('a');
+    link.download = 'yard_map.png';
+    link.href = mapState.baseImage.src;
+    link.click();
+}
+
+// Regenerate map with current settings
+async function regenerateMap() {
+    if ((!uploadedFile && !hasStoredPly) || !currentBoundaries) {
+        showAlert('Please complete previous steps first', 'warning');
+        return;
+    }
+
+    // Convert pan offset to world coordinates and update center
+    if (mapState.panOffset.x !== 0 || mapState.panOffset.y !== 0) {
+        const worldDeltaX = -mapState.panOffset.x * mapState.resolution / mapState.zoom;
+        const worldDeltaY = mapState.panOffset.y * mapState.resolution / mapState.zoom; // Flip Y
+        mapState.centerX += worldDeltaX;
+        mapState.centerY += worldDeltaY;
+
+        // Update the input fields
+        document.getElementById('centerX').value = mapState.centerX.toFixed(3);
+        document.getElementById('centerY').value = mapState.centerY.toFixed(3);
+    }
+
+    // Get current values from interactive controls and inputs
+    mapState.centerX = parseFloat(document.getElementById('centerX').value);
+    mapState.centerY = parseFloat(document.getElementById('centerY').value);
+    mapState.rotation = parseFloat(document.getElementById('rotation').value);
+    mapState.resolution = parseFloat(document.getElementById('resolution').value);
+
+    // The CUDA rasterizer already handles zoom correctly via the resolution parameter
+    // Resolution determines how much area is covered: smaller resolution = more zoomed in
+    // Just regenerate with current center and resolution (which reflects zoom level)
+    await generateMap();
+}
+
+// Generate map with current parameters
+async function generateMap() {
+    const requestData = {
+        center_x: mapState.centerX,
+        center_y: mapState.centerY,
+        rotation: mapState.rotation,
+        resolution: mapState.resolution,
+        algorithm: document.getElementById('algorithm').value,
+        use_stored: !uploadedFile
+    };
+
+    // Show progress toast
+    showProjectionToast('Generating Yard Map', 'Projecting point cloud... Please wait for the map to appear.', true);
+
+    try {
+        let response;
+
+        if (uploadedFile) {
+            const formData = new FormData();
+            formData.append('ply_file', uploadedFile);
+            formData.append('params', JSON.stringify(requestData));
+
+            response = await fetch('/project_yard_interactive', {
+                method: 'POST',
+                body: formData
+            });
+        } else {
+            response = await fetch('/project_yard_interactive', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestData)
+            });
+        }
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            projectedImage = result.image_base64;
+            displayYardImage(result);
+            document.getElementById('visualizationSection').style.display = 'block';
+            document.getElementById('saveBtn').style.display = 'inline-block';
+            document.getElementById('regenerateBtn').style.display = 'inline-block';
+            document.getElementById('downloadBtn').style.display = 'inline-block';
+
+            // Show success toast
+            showProjectionToast('Map Generated!', 'Yard map generated successfully with CUDA acceleration.', false);
+
+            // Auto-hide success toast after 3 seconds
+            setTimeout(() => hideProjectionToast(), 3000);
+        } else {
+            // Show error toast
+            showProjectionToast('Generation Failed', result.message, false);
+            setTimeout(() => hideProjectionToast(), 5000);
+        }
+
+    } catch (error) {
+        // Show error toast
+        showProjectionToast('Error', 'Error generating map: ' + error.message, false);
+        setTimeout(() => hideProjectionToast(), 5000);
+    }
+}
+
+// Display yard image
+function displayYardImage(result) {
+    // Create new image and load the base64 data
+    mapState.baseImage = new Image();
+    mapState.baseImage.onload = function() {
+        // Use actual image dimensions for pixel-perfect display
+        mapState.canvas.width = this.width;
+        mapState.canvas.height = this.height;
+
+        // Reset zoom to 1.0 since the new image from server represents the zoomed view
+        // Reset pan offset since the new image is centered correctly
+        // Keep the rotation value from the input field since the image already has it applied
+        mapState.zoom = 1.0;
+        mapState.panOffset = { x: 0, y: 0 };
+        // Store the base rotation that's already applied to the image
+        mapState.baseRotation = parseFloat(document.getElementById('rotation').value) || 0;
+        mapState.rotation = mapState.baseRotation;
+        redrawCanvas();
+        updateInfoBadges();
+    };
+    mapState.baseImage.src = 'data:image/png;base64,' + result.image_base64;
+
+    // Update info badges
+    document.getElementById('imageResolution').textContent = `${result.width}×${result.height}`;
+    document.getElementById('imagePoints').textContent = `${result.point_count.toLocaleString()} points`;
+}
+
+// Save yard map
+async function saveYardMap() {
+    const mapName = document.getElementById('mapName').value;
+    if (!mapName) {
+        showAlert('Please enter a map name', 'warning');
+        return;
+    }
+
+    if (!projectedImage) {
+        showAlert('Please generate a map first', 'warning');
+        return;
+    }
+
+    // Send the currently displayed image instead of re-processing
+    const requestData = {
+        name: mapName,
+        image_base64: projectedImage,
+        center_x: mapState.centerX,
+        center_y: mapState.centerY,
+        rotation: mapState.rotation,
+        resolution: mapState.resolution,
+        width: mapState.baseImage ? mapState.baseImage.width : 1920,
+        height: mapState.baseImage ? mapState.baseImage.height : 1080,
+        algorithm: document.getElementById('algorithm').value
+    };
+
+    showProcessingModal('Saving Map', 'Storing yard map...');
+
+    try {
+        const response = await fetch('/save_yard_map_direct', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(requestData)
+        });
+
+        const result = await response.json();
+        hideProcessingModal();
+
+        if (result.status === 'success') {
+            showAlert(result.message, 'success');
+            loadSavedMaps();
+        } else {
+            showAlert(result.message, 'danger');
+        }
+
+    } catch (error) {
+        hideProcessingModal();
+        showAlert('Error saving map: ' + error.message, 'danger');
+    }
+}
+
+// Load saved maps
+async function loadSavedMaps() {
+    try {
+        const response = await fetch('/get_yard_maps');
+        const maps = await response.json();
+
+        const container = document.getElementById('savedMaps');
+
+        if (maps.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted">
+                    <i class="bi bi-map" style="font-size: 2rem;"></i>
+                    <p>No saved yard maps found</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = `
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Center</th>
+                        <th>Size</th>
+                        <th>Resolution</th>
+                        <th>Points</th>
+                        <th>Created</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        maps.forEach(map => {
+            const created = new Date(map.created_at).toLocaleString();
+            const isUsed = map.is_used || false;
+            const statusBadge = isUsed ? '<span class="badge bg-success">In Use</span>' : '';
+            const useButtonText = isUsed ? 'Used' : 'Use Map';
+            const useButtonClass = isUsed ? 'btn-success' : 'btn-outline-success';
+
+            html += `
+            <tr>
+                <td><strong>${map.name}</strong></td>
+                <td>(${map.center_x.toFixed(1)}, ${map.center_z.toFixed(1)})</td>
+                <td>${map.width.toFixed(1)} × ${map.height.toFixed(1)}</td>
+                <td>${map.resolution_x}×${map.resolution_y}</td>
+                <td>${map.point_count.toLocaleString()}</td>
+                <td><small>${created}</small></td>
+                <td>${statusBadge}</td>
+                <td>
+                    <button class="btn ${useButtonClass} btn-sm" onclick="useYardMap(${map.id})" ${isUsed ? 'disabled' : ''}>
+                        <i class="bi bi-check-circle"></i> ${useButtonText}
+                    </button>
+                    <button class="btn btn-outline-primary btn-sm" onclick="viewYardMap(${map.id})">
+                        <i class="bi bi-eye"></i>
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" onclick="deleteYardMap('${map.name}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>
+            `;
+        });
+
+        html += '</tbody></table></div>';
+        container.innerHTML = html;
+
+    } catch (error) {
+        document.getElementById('savedMaps').innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i> Error loading maps: ${error.message}
+            </div>
+        `;
+    }
+}
+
+// Use yard map for projection
+async function useYardMap(mapId) {
+    try {
+        const response = await fetch(`/use_yard_map/${mapId}`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            showAlert(result.message, 'success');
+            loadSavedMaps(); // Refresh to show updated status
+        } else {
+            showAlert(result.message, 'danger');
+        }
+
+    } catch (error) {
+        showAlert('Error using map: ' + error.message, 'danger');
+    }
+}
+
+// View yard map
+function viewYardMap(mapId) {
+    window.open(`/yard_image/${mapId}`, '_blank');
+}
+
+// Delete yard map
+async function deleteYardMap(mapName) {
+    if (!confirm(`Delete yard map "${mapName}"?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/delete_yard_map/${mapName}`, {
+            method: 'POST'
+        });
+
+        const result = await response.json();
+
+        if (result.status === 'success') {
+            showAlert(result.message, 'success');
+            loadSavedMaps();
+        } else {
+            showAlert(result.message, 'danger');
+        }
+
+    } catch (error) {
+        showAlert('Error deleting map: ' + error.message, 'danger');
+    }
+}
+
+// Processing modal functions
+function showProcessingModal(title, message) {
+    document.getElementById('processingTitle').textContent = title;
+    document.getElementById('processingMessage').textContent = message;
+    const modal = new bootstrap.Modal(document.getElementById('processingModal'));
+    modal.show();
+}
+
+function hideProcessingModal() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('processingModal'));
+    if (modal) {
+        modal.hide();
+    }
+}
+
+// Show alert message
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+
+    if (type === 'success') {
+        setTimeout(() => {
+            if (alertDiv.parentNode) {
+                alertDiv.remove();
+            }
+        }, 5000);
+    }
+}
+
+// Toast utility functions
+function showProjectionToast(title, message, showSpinner) {
+    const toast = document.getElementById('projectionToast');
+    const toastTitle = document.getElementById('toastTitle');
+    const toastMessage = document.getElementById('toastMessage');
+    const toastSpinner = document.getElementById('toastSpinner');
+    const toastIcon = document.getElementById('toastIcon');
+
+    // Update content
+    toastTitle.textContent = title;
+    toastMessage.textContent = message;
+
+    // Show/hide spinner and icon
+    if (showSpinner) {
+        toastSpinner.style.display = 'inline-block';
+        toastIcon.style.display = 'none';
+    } else {
+        toastSpinner.style.display = 'none';
+        toastIcon.style.display = 'inline-block';
+    }
+
+    // Show toast
+    const bsToast = new bootstrap.Toast(toast, {
+        autohide: false  // Don't auto-hide progress toast
+    });
+    bsToast.show();
+}
+
+function hideProjectionToast() {
+    const toast = document.getElementById('projectionToast');
+    const bsToast = bootstrap.Toast.getInstance(toast);
+    if (bsToast) {
+        bsToast.hide();
+    }
+}
+
+// Load saved maps on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSavedMaps();
+});
+</script>
+{% endblock %}
